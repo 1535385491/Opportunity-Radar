@@ -1,20 +1,20 @@
 {
   "zh": {
     "ai-cli": [
-      "Claude Code 聚焦稳定性修复，企业级多账户功能上线",
-      "OpenAI Codex 成本飙升引争议，连发3个alpha版",
-      "Gemini CLI Agent可靠性遭质疑，假成功问题突出",
-      "OpenCode 社区火爆，YOLO模式和多模型兼容成焦点",
-      "Qwen Code 发布 v0.18.5 正式版，新增工具循环防护",
-      "DeepSeek 更名 CodeWhale，强化Agent自主权控制"
+      "Claude Code 企业功能与稳定性 Bug 成社区焦点。",
+      "OpenAI Codex 因费率暴增和 SSD 过度写入引抗议。",
+      "Gemini CLI Agent 可靠性问题：假成功与挂起频发。",
+      "GitHub Copilot CLI 项目配置和 ARM64 稳定性讨论热。",
+      "开源 OpenCode 推进 TUI 2.0 和多 Agent 协作。",
+      "Qwen Code 发布 v0.18.5，修复工具循环与路径安全。"
     ],
     "ai-agents": [
-      "OpenClaw 发布两个新版本，修复子代理交付核心问题",
-      "P1 Bug集中在会话状态和消息丢失，稳定性诉求迫切",
-      "PR 审查自动修复管道和Windows守护进程已合并",
-      "Telegram 消息如今支持富文本和更精准的渲染",
-      "项目每日Issue和PR达500条，但合并率仅4%",
-      "社区进入高活跃高压力阶段，急需加速收敛问题"
+      "OpenClaw 发布 v2026.6.10-beta，聚焦稳定性修复。",
+      "社区抗议静默迁移与消息丢失，OpenClaw 连续打补丁。",
+      "OpenClaw 会话状态与 Telegram 渲染问题获修复。",
+      "Cron 作业可靠性成 OpenClaw 本周重点改进项。",
+      "智能体技能编排框架 superpowers 获 GitHub 爆发增长。",
+      "kilocode 项目展示 Agent 开发向平台化演进。"
     ],
     "ai-trending": [
       "Token压缩工具headroom今日暴涨2624星，降低推理成本",
@@ -63,6 +63,14 @@
       "AI编码助手反复生成15类系统性bug被总结",
       "gzip是否可作为语言模型的有趣实验引思考",
       "企业级MCP可见性和控制方案Bifrost Edge发布"
+    ],
+    "ai-weekly": [
+      "Anthropic 发布重磅经济报告：AI 编程转向端到端智能体。",
+      "Anthropic 因 Mythos 模型出口管制与美国政府激烈冲突。",
+      "Token 压缩技术爆发：headroom 可压缩 LLM 输入达 95%。",
+      "OpenAI 泄露财务文件：2025 年亏损高达 210-380 亿美元。",
+      "智谱 GLM-5.2 开源，测评幻觉率优于 GPT-5.5。",
+      "智能体技能编排框架 superpowers 与 kilocode 获高关注。"
     ]
   },
   "en": {
@@ -129,6 +137,14 @@
       "Kitana replaces token prediction",
       "Skepticism on LLM intelligence",
       "Productionizing AI agents is messy"
+    ],
+    "ai-weekly": [
+      "OpenAI leak shows $34B spent, $21B losses",
+      "Anthropic opens Seoul office with NAVER, Nexon",
+      "White House escalates against Anthropic over export",
+      "Gemini CLI suffers silent success bugs crisis",
+      "Claude Code study: debugging time halved",
+      "AlphaFold co-creator Jumper leaves DeepMind for Anthropic"
     ]
   }
 }
