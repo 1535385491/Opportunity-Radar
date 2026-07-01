@@ -71,6 +71,14 @@
       "AGENTS.md 文件让 AI 编码代理真正有用",
       "开发者学会不再与 AI 比拼产出速度",
       "Anthropic 论文重塑对软件工程角色认知"
+    ],
+    "ai-monthly": [
+      "Anthropic融资650亿，估值9650亿美元创新高",
+      "Claude Opus 4.8被指控蒸馏Qwen，爆发信任危机",
+      "Anthropic最强模型遭美国政府禁入，AI地缘政治化里程碑",
+      "OpenAI秘密提交IPO，巨额亏损下启动资本市场博弈",
+      "GLM-5.2开源击败Claude，引发平行AI世界讨论",
+      "Hermes Agent登顶GitHub，陪伴式Agent范式崛起"
     ]
   },
   "en": {
@@ -145,6 +153,14 @@
       "Smaller models often enough",
       "AI security deep dives",
       "Post-hype pragmatism shift"
+    ],
+    "ai-monthly": [
+      "Anthropic's $65B round and Opus 4.8 release",
+      "Claude Code 'Cost Runaway' crisis erupts",
+      "OpenAI secret IPO filing and $38B loss leak",
+      "'Agent Skill' ecosystem explodes on GitHub",
+      "Fable 5 triggers 10-20x token consumption",
+      "Agent reliability overtakes raw model capability"
     ]
   }
 }
