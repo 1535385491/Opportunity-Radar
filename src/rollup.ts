@@ -98,9 +98,14 @@ async function generateRollupHighlights(
 
   const [zhHlRes, enHlRes] = await Promise.allSettled([
     callLlm(buildHighlightsPrompt({ [reportId]: zhContent }, "zh", itemsPerReport), 1024),
-    enContent ? callLlm(buildHighlightsPrompt({ [reportId]: enContent }, "en", itemsPerReport), 1024) : Promise.resolve("{}"),
+    enContent
+      ? callLlm(buildHighlightsPrompt({ [reportId]: enContent }, "en", itemsPerReport), 1024)
+      : Promise.resolve("{}"),
   ]);
-  for (const [lang, res] of [["zh", zhHlRes], ["en", enHlRes]] as const) {
+  for (const [lang, res] of [
+    ["zh", zhHlRes],
+    ["en", enHlRes],
+  ] as const) {
     if (res.status !== "fulfilled") {
       console.error(`  [${reportId}] ${lang} highlights generation failed: ${res.reason}`);
       continue;
@@ -148,10 +153,14 @@ export async function runWeeklyRollup(): Promise<void> {
   );
 
   // Generate reports (ZH only, or ZH + EN based on LANGUAGES env var)
-  const langs = ((process.env["LANGUAGES"] ?? "zh,en").split(",").map((s) => s.trim()) ?? ["zh", "en"]) as Lang[];
+  const langs = ((process.env["LANGUAGES"] ?? "zh,en").split(",").map((s) => s.trim()) ?? [
+    "zh",
+    "en",
+  ]) as Lang[];
 
   const summaryPromises = [callLlm(buildWeeklyPrompt(dailyDigests, weekStr, "zh"), LLM_TOKENS_ROLLUP)];
-  if (langs.includes("en")) summaryPromises.push(callLlm(buildWeeklyPrompt(dailyDigests, weekStr, "en"), LLM_TOKENS_ROLLUP));
+  if (langs.includes("en"))
+    summaryPromises.push(callLlm(buildWeeklyPrompt(dailyDigests, weekStr, "en"), LLM_TOKENS_ROLLUP));
   const summaryResults = await Promise.all(summaryPromises);
   const zhSummary = summaryResults[0];
   const enSummary = langs.includes("en") ? summaryResults[1] : "";
@@ -246,10 +255,14 @@ export async function runMonthlyRollup(): Promise<void> {
   console.log(`[monthly] Source: ${sourceLabel.zh}`);
 
   // Generate reports (ZH only, or ZH + EN based on LANGUAGES env var)
-  const langs = ((process.env["LANGUAGES"] ?? "zh,en").split(",").map((s) => s.trim()) ?? ["zh", "en"]) as Lang[];
+  const langs = ((process.env["LANGUAGES"] ?? "zh,en").split(",").map((s) => s.trim()) ?? [
+    "zh",
+    "en",
+  ]) as Lang[];
 
   const summaryPromises = [callLlm(buildMonthlyPrompt(sourceDigests, monthStr, "zh"), LLM_TOKENS_ROLLUP)];
-  if (langs.includes("en")) summaryPromises.push(callLlm(buildMonthlyPrompt(sourceDigests, monthStr, "en"), LLM_TOKENS_ROLLUP));
+  if (langs.includes("en"))
+    summaryPromises.push(callLlm(buildMonthlyPrompt(sourceDigests, monthStr, "en"), LLM_TOKENS_ROLLUP));
   const summaryResults = await Promise.all(summaryPromises);
   const zhSummary = summaryResults[0];
   const enSummary = langs.includes("en") ? summaryResults[1] : "";

@@ -447,10 +447,7 @@ export interface OpportunityCard {
   signals: OpportunitySignal[];
 }
 
-export function buildOpportunityPrompt(
-  reportContents: Record<string, string>,
-  lang: Lang = "zh",
-): string {
+export function buildOpportunityPrompt(reportContents: Record<string, string>, lang: Lang = "zh"): string {
   const sections = Object.entries(reportContents)
     .map(([id, content]) => `## [${id}]\n\n${content.slice(0, 2000)}`)
     .join("\n\n---\n\n");

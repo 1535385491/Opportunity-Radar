@@ -52,7 +52,12 @@ async function getTenantToken(): Promise<string> {
 
   if (!resp.ok) throw new Error(`Feishu token API ${resp.status}: ${await resp.text()}`);
 
-  const data = (await resp.json()) as { code: number; msg: string; tenant_access_token?: string; expire?: number };
+  const data = (await resp.json()) as {
+    code: number;
+    msg: string;
+    tenant_access_token?: string;
+    expire?: number;
+  };
   if (data.code !== 0 || !data.tenant_access_token) {
     throw new Error(`Feishu token error ${data.code}: ${data.msg}`);
   }
@@ -201,8 +206,22 @@ function buildCard(ctx: CardContext): unknown {
     // Fallback: use highlights if opportunity card not available
     const zhHighlights = highlights?.zh ?? {};
     const highlightLines: string[] = [];
-    const priorityOrder = ["ai-cli", "ai-agents", "ai-trending", "ai-hn", "ai-ph", "ai-arxiv", "ai-hf", "ai-community"];
-    const ordered = type === "weekly" ? ["ai-weekly", ...priorityOrder] : type === "monthly" ? ["ai-monthly", ...priorityOrder] : priorityOrder;
+    const priorityOrder = [
+      "ai-cli",
+      "ai-agents",
+      "ai-trending",
+      "ai-hn",
+      "ai-ph",
+      "ai-arxiv",
+      "ai-hf",
+      "ai-community",
+    ];
+    const ordered =
+      type === "weekly"
+        ? ["ai-weekly", ...priorityOrder]
+        : type === "monthly"
+          ? ["ai-monthly", ...priorityOrder]
+          : priorityOrder;
 
     for (const reportId of ordered) {
       if (!baseReports.includes(reportId)) continue;

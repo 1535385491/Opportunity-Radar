@@ -27,7 +27,13 @@ import {
   buildPeersComparisonPrompt,
   buildSkillsPrompt,
 } from "./prompts.ts";
-import { buildTrendingPrompt, buildHighlightsPrompt, buildOpportunityPrompt, type ReportHighlights, type OpportunityCard } from "./prompts-data.ts";
+import {
+  buildTrendingPrompt,
+  buildHighlightsPrompt,
+  buildOpportunityPrompt,
+  type ReportHighlights,
+  type OpportunityCard,
+} from "./prompts-data.ts";
 import { callLlm, parseLlmJson, saveFile, autoGenFooter, LLM_TOKENS_TRENDING } from "./report.ts";
 import { buildCliReportContent, buildOpenclawReportContent } from "./report-builders.ts";
 import {
@@ -294,7 +300,10 @@ async function main(): Promise<void> {
   const dateStr = toCstDateStr(now);
   const utcStr = toUtcStr(now);
   const digestRepo = process.env["DIGEST_REPO"] ?? "";
-  const langs = ((process.env["LANGUAGES"] ?? "zh,en").split(",").map((s) => s.trim()) ?? ["zh", "en"]) as Lang[];
+  const langs = ((process.env["LANGUAGES"] ?? "zh,en").split(",").map((s) => s.trim()) ?? [
+    "zh",
+    "en",
+  ]) as Lang[];
 
   const providerName = process.env["LLM_PROVIDER"] ?? "anthropic";
   console.log(`[${now.toISOString()}] Starting digest | provider: ${providerName}`);
@@ -322,9 +331,25 @@ async function main(): Promise<void> {
   // 2. Generate per-repo LLM summaries
   const langList = langs.join(" + ").toUpperCase();
   console.log(`  Generating summaries for: ${langList}...`);
-  const zhSummaries = await generateSummaries(fetchedCli, fetchedOpenclaw, skillsData, fetchedPeers, trendingData, dateStr, "zh");
+  const zhSummaries = await generateSummaries(
+    fetchedCli,
+    fetchedOpenclaw,
+    skillsData,
+    fetchedPeers,
+    trendingData,
+    dateStr,
+    "zh",
+  );
   const enSummaries = langs.includes("en")
-    ? await generateSummaries(fetchedCli, fetchedOpenclaw, skillsData, fetchedPeers, trendingData, dateStr, "en")
+    ? await generateSummaries(
+        fetchedCli,
+        fetchedOpenclaw,
+        skillsData,
+        fetchedPeers,
+        trendingData,
+        dateStr,
+        "en",
+      )
     : zhSummaries;
 
   // 3. Generate cross-repo comparisons
@@ -349,13 +374,18 @@ async function main(): Promise<void> {
     langs.includes("en")
       ? Promise.all([
           callLlm(buildComparisonPrompt(enSummaries.cliDigests, dateStr, "en")),
-          callLlm(buildPeersComparisonPrompt(makeOpenclawDigest("en"), enSummaries.peerDigests, dateStr, "en")),
+          callLlm(
+            buildPeersComparisonPrompt(makeOpenclawDigest("en"), enSummaries.peerDigests, dateStr, "en"),
+          ),
         ])
       : Promise.resolve(["", ""]),
   ]);
 
   const comparisonByLang: Record<Lang, string> = { zh: zhCompResults[0] ?? "", en: enCompResults[0] ?? "" };
-  const peersComparisonByLang: Record<Lang, string> = { zh: zhCompResults[1] ?? "", en: enCompResults[1] ?? "" };
+  const peersComparisonByLang: Record<Lang, string> = {
+    zh: zhCompResults[1] ?? "",
+    en: enCompResults[1] ?? "",
+  };
 
   // 4. Build + save all reports
   const cliContent: Record<Lang, string> = {} as Record<Lang, string>;
@@ -399,7 +429,15 @@ async function main(): Promise<void> {
   }
 
   const dsPromises = [
-    saveTrendingReport(trendingData, zhSummaries.trendingSummary, utcStr, dateStr, digestRepo, autoGenFooter("zh"), "zh"),
+    saveTrendingReport(
+      trendingData,
+      zhSummaries.trendingSummary,
+      utcStr,
+      dateStr,
+      digestRepo,
+      autoGenFooter("zh"),
+      "zh",
+    ),
     saveHnReport(hnData, utcStr, dateStr, digestRepo, autoGenFooter("zh"), "zh"),
     savePhReport(phData, utcStr, dateStr, digestRepo, autoGenFooter("zh"), "zh"),
     saveArxivReport(arxivData, utcStr, dateStr, digestRepo, autoGenFooter("zh"), "zh"),
@@ -409,7 +447,15 @@ async function main(): Promise<void> {
   if (langs.includes("en")) {
     const enTrendingSummary = enSummaries?.trendingSummary ?? "";
     dsPromises.push(
-      saveTrendingReport(trendingData, enTrendingSummary, utcStr, dateStr, digestRepo, autoGenFooter("en"), "en"),
+      saveTrendingReport(
+        trendingData,
+        enTrendingSummary,
+        utcStr,
+        dateStr,
+        digestRepo,
+        autoGenFooter("en"),
+        "en",
+      ),
       saveHnReport(hnData, utcStr, dateStr, digestRepo, autoGenFooter("en"), "en"),
       savePhReport(phData, utcStr, dateStr, digestRepo, autoGenFooter("en"), "en"),
       saveArxivReport(arxivData, utcStr, dateStr, digestRepo, autoGenFooter("en"), "en"),
@@ -427,7 +473,10 @@ async function main(): Promise<void> {
 
   const zhReports: Record<string, string> = { "ai-cli": cliContent.zh, "ai-agents": openclawContent.zh };
   const enReports: Record<string, string> = langs.includes("en")
-    ? { "ai-cli": (cliContent as Record<string, string>)["en"] ?? "", "ai-agents": (openclawContent as Record<string, string>)["en"] ?? "" }
+    ? {
+        "ai-cli": (cliContent as Record<string, string>)["en"] ?? "",
+        "ai-agents": (openclawContent as Record<string, string>)["en"] ?? "",
+      }
     : {};
   for (const [id, zhFile, enFile] of [
     ["ai-trending", "ai-trending.md", "ai-trending-en.md"],
@@ -452,7 +501,10 @@ async function main(): Promise<void> {
     callLlm(buildHighlightsPrompt(zhReports, "zh"), 2048),
     langs.includes("en") ? callLlm(buildHighlightsPrompt(enReports, "en"), 2048) : Promise.resolve("{}"),
   ]);
-  for (const [lang, res] of [["zh", zhHlRes], ["en", enHlRes]] as const) {
+  for (const [lang, res] of [
+    ["zh", zhHlRes],
+    ["en", enHlRes],
+  ] as const) {
     if (res.status !== "fulfilled") {
       console.error(`  [highlights] ${lang} generation failed: ${res.reason}`);
       continue;
@@ -477,7 +529,10 @@ async function main(): Promise<void> {
     callLlm(buildOpportunityPrompt(zhReports, "zh"), 2048),
     langs.includes("en") ? callLlm(buildOpportunityPrompt(enReports, "en"), 2048) : Promise.resolve("{}"),
   ]);
-  for (const [lang, res] of [["zh", zhOppRes], ["en", enOppRes]] as const) {
+  for (const [lang, res] of [
+    ["zh", zhOppRes],
+    ["en", enOppRes],
+  ] as const) {
     if (res.status !== "fulfilled") {
       console.error(`  [opportunity] ${lang} generation failed: ${res.reason}`);
       continue;
