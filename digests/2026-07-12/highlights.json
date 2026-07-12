@@ -1,60 +1,52 @@
 {
   "zh": {
     "ai-cli": [
-      "Claude Code过去24小时新增Issues超过50条，活跃度极高。",
-      "Gemini CLI过去24小时PR活动极为频繁，聚焦安全与代理行为。",
-      "OpenCode社区贡献活跃，Issues与PR数量均衡，修复与新功能并进。",
-      "Pi工具社区正密集讨论与修复新模型GPT-5.6的适配问题。",
-      "多个CLI工具社区聚焦解决Windows/WSL等跨平台兼容性问题。",
-      "工具正从“代码补全”向“全栈自动化开发代理”深度演进。"
+      "Gemini CLI, OpenCode, Pi, Qwen Code 活跃度极高",
+      "各大工具聚焦 MCP 生态稳定与扩展",
+      "OpenCode 同时面临核心稳定性与新模型集成挑战",
+      "Kimi CLI 活跃度较低，专注错误处理",
+      "GitHub Copilot CLI Issues 数量最多，反馈活跃",
+      "Qwen Code 探讨单守护进程架构重大变革"
     ],
     "ai-agents": [
-      "OpenClaw今日合并/关闭PR高达237条，开发迭代效率极高。",
-      "PR #105358修复SQLite会话迁移中断问题，保障核心数据安全。",
-      "Teams“精确标签页工作空间共享”功能基础代码被提交。",
-      "社区持续反馈Linux/Windows客户端的跨平台支持缺口。",
-      "飞书渠道实现了消息撤回时自动取消代理运行的功能。",
-      "修复了浏览器自动化中新建标签页抢占窗口焦点的问题。"
+      "OpenClaw 24小时内更新 500 Issues 和 PRs",
+      "项目正进行核心架构重构以提升可维护性",
+      "安全加固：防护 base64 解码内存溢出",
+      "为 Microsoft Teams 支持多机器人账户",
+      "修复 Discord、QQ Bot 等多渠道稳定性问题",
+      "聚焦会话管理、渠道集成等社区热点"
     ],
     "ai-trending": [
-      "NousResearch/hermes-agent以21.3万星高居Agent榜首位。",
-      "Agent-Reach为Agent赋予互联网“眼睛”，解决信息输入瓶颈。",
-      "hugohe3/ppt-master能从文档自动生成可编辑PPT，星标超3.8万。",
-      "CopilotKit专注于构建Agent与生成式UI的前端交互栈。",
-      "多个本土、轻量级AI开源项目在趋势榜上表现抢眼。",
-      "Rust项目rig代表对高性能、类型安全AI工具栈的追求。"
+      "Mesh LLM 分布式计算框架 HN 热度近 300",
+      "DesktopCommanderMCP 扩展 AI 物理设备控制",
+      "金融交易 Agent 出现爆发式增长",
+      "RAG 与 AI 记忆系统仍是建设重点",
+      "AutoGPT 星标数近 19 万，仍是标杆",
+      "Ollama 星标超 17 万，成本地运行事实标准"
     ],
     "ai-hn": [
-      "Mesh LLM：分布式AI计算框架在去中心化网络上运行。",
-      "Anthropic发现Claude模型内部“思考”概念的隐藏空间。",
-      "苹果与OpenAI的知识产权法律战在社区持续引发热议。",
-      "社区出现对主流模型如Claude“体验下滑”的批评声浪。",
-      "OpenBenchmarks：帮助Agent自动发现并选择最佳SaaS API。",
-      "OpenIngress：一个用于检查Agent爬虫与导航行为的工具。"
+      "Mesh LLM 分布式 AI 计算框架 HN 最热，297分",
+      "用户批评 Claude 最新模型质量下滑",
+      "AI 提升研究职业但致科学发现同质化",
+      "社区反感“一切皆可问 LLM”的建议",
+      "讨论 AI 发展带来的环境与伦理影响",
+      "关注 Anthropic 对模型思维过程的探索"
     ],
     "ai-ph": [
-      "Sim：开源AI智能体和工作流工作空间，投票数638。",
-      "PlugThis：通过与AI对话即可创建自己的Chrome扩展程序。",
-      "Scarlett：嵌入Slack和iMessage中的AI同事，投票数411。",
-      "Vizard：AI视频编辑器，今日占据热门产品前三甲。",
-      "Notion发布了与AI智能体相关的最新迭代产品。",
-      "Meta在Product Hunt上发布了其AI研究的新工具。"
+      "Sim 开源 AI 工作流平台高票位居首",
+      "PlugThis 通过对话生成 Chrome 扩展",
+      "Notion 发布最新 AI 智能体平台迭代",
+      "Scarlett. AI 助手嵌入 Slack 和 iMessage",
+      "开发者工具聚焦低门槛与生产力",
+      "AI 视频编辑产品获得高关注"
     ],
     "ai-hf": [
-      "GLM-5.2模型获得3832个赞和超42万下载，表现抢眼。",
-      "百度Unlimited-OCR模型下载量超过138万，成通用OCR标杆。",
-      "基于Qwen3.5的MoE架构在微调与衍生模型中成为主流。",
-      "NVIDIA发布Puzzle系列MoE模型，75B参数激活9B。",
-      "模型路由器Supra-Router仅51M，用于多LLM任务分发。",
-      "视觉语言模型生态活跃，社区涌现大量GGUF量化版本。"
-    ],
-    "ai-community": [
-      "分享将Claude Code的token成本削减77%的实战分析经验。",
-      "深度寓言探讨AI监控可能带来的职场异化与权力转移。",
-      "“Model Kombat”：将LLM核心概念游戏化的复古对战游戏。",
-      "探讨AI代理在记忆与指令遵循时的逻辑陷阱与固有局限。",
-      "讨论模型在已知被测试时可能产生的行为偏差问题。",
-      "介绍维护AI代理行为规则文件AGENTS.md的具体方法。"
+      "Qwen3.6 社区微调版下载量破 250 万",
+      "百度 Unlimited-OCR 下载量超 140 万",
+      "MiniCPM5-1B 小模型下载量近 37 万",
+      "GLM-5.2 获赞近 4000 引领开源生态",
+      "量化 GGUF 格式是部署端事实标准",
+      "多模态与 OCR 模型需求旺盛"
     ]
   },
   "en": {}
