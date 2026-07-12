@@ -96,16 +96,11 @@ async function generateRollupHighlights(
     en: { ...existing.en },
   };
 
-  // zh and en are parsed independently so a failure in one language doesn't
-  // wipe the other.
-  const [zhRes, enRes] = await Promise.allSettled([
+  const [zhHlRes, enHlRes] = await Promise.allSettled([
     callLlm(buildHighlightsPrompt({ [reportId]: zhContent }, "zh", itemsPerReport), 1024),
-    callLlm(buildHighlightsPrompt({ [reportId]: enContent }, "en", itemsPerReport), 1024),
+    enContent ? callLlm(buildHighlightsPrompt({ [reportId]: enContent }, "en", itemsPerReport), 1024) : Promise.resolve("{}"),
   ]);
-  for (const [lang, res] of [
-    ["zh", zhRes],
-    ["en", enRes],
-  ] as const) {
+  for (const [lang, res] of [["zh", zhHlRes], ["en", enHlRes]] as const) {
     if (res.status !== "fulfilled") {
       console.error(`  [${reportId}] ${lang} highlights generation failed: ${res.reason}`);
       continue;
@@ -152,16 +147,16 @@ export async function runWeeklyRollup(): Promise<void> {
     `[weekly] Found ${Object.keys(dailyDigests).length} daily digests: ${Object.keys(dailyDigests).join(", ")}`,
   );
 
-  // Generate ZH and EN in parallel
-  console.log("[weekly] Calling LLM for ZH and EN weekly reports in parallel...");
-  const [zhSummary, enSummary] = await Promise.all([
-    callLlm(buildWeeklyPrompt(dailyDigests, weekStr, "zh"), LLM_TOKENS_ROLLUP),
-    callLlm(buildWeeklyPrompt(dailyDigests, weekStr, "en"), LLM_TOKENS_ROLLUP),
-  ]);
+  // Generate reports (ZH only, or ZH + EN based on LANGUAGES env var)
+  const langs = ((process.env["LANGUAGES"] ?? "zh,en").split(",").map((s) => s.trim()) ?? ["zh", "en"]) as Lang[];
+
+  const summaryPromises = [callLlm(buildWeeklyPrompt(dailyDigests, weekStr, "zh"), LLM_TOKENS_ROLLUP)];
+  if (langs.includes("en")) summaryPromises.push(callLlm(buildWeeklyPrompt(dailyDigests, weekStr, "en"), LLM_TOKENS_ROLLUP));
+  const summaryResults = await Promise.all(summaryPromises);
+  const zhSummary = summaryResults[0];
+  const enSummary = langs.includes("en") ? summaryResults[1] : "";
 
   const footer = autoGenFooter("zh");
-  const enFooter = autoGenFooter("en");
-
   const zhContent =
     `# ${WEEKLY_REPORT.title.zh} ${weekStr}\n\n` +
     `> ${WEEKLY_REPORT.coverage.zh}: ${last7[last7.length - 1]} ~ ${last7[0]} | 生成时间: ${utcStr} UTC\n\n` +
@@ -169,17 +164,21 @@ export async function runWeeklyRollup(): Promise<void> {
     zhSummary +
     footer;
 
-  const enContent =
-    `# ${WEEKLY_REPORT.title.en} ${weekStr}\n\n` +
-    `> ${WEEKLY_REPORT.coverage.en}: ${last7[last7.length - 1]} ~ ${last7[0]} | Generated: ${utcStr} UTC\n\n` +
-    `---\n\n` +
-    enSummary +
-    enFooter;
-
   console.log(`  Saved ${saveFile(zhContent, dateStr, "ai-weekly.md")}`);
-  console.log(`  Saved ${saveFile(enContent, dateStr, "ai-weekly-en.md")}`);
 
-  await generateRollupHighlights(zhContent, enContent, "ai-weekly", dateStr, 6);
+  if (langs.includes("en")) {
+    const enFooter = autoGenFooter("en");
+    const enContent =
+      `# ${WEEKLY_REPORT.title.en} ${weekStr}\n\n` +
+      `> ${WEEKLY_REPORT.coverage.en}: ${last7[last7.length - 1]} ~ ${last7[0]} | Generated: ${utcStr} UTC\n\n` +
+      `---\n\n` +
+      enSummary +
+      enFooter;
+    console.log(`  Saved ${saveFile(enContent, dateStr, "ai-weekly-en.md")}`);
+    await generateRollupHighlights(zhContent, enContent, "ai-weekly", dateStr, 6);
+  } else {
+    await generateRollupHighlights(zhContent, "", "ai-weekly", dateStr, 6);
+  }
 
   if (digestRepo) {
     const url = await createGitHubIssue(WEEKLY_REPORT.issueTitle(weekStr), zhContent, "weekly");
@@ -246,16 +245,16 @@ export async function runMonthlyRollup(): Promise<void> {
 
   console.log(`[monthly] Source: ${sourceLabel.zh}`);
 
-  // Generate ZH and EN in parallel
-  console.log("[monthly] Calling LLM for ZH and EN monthly reports in parallel...");
-  const [zhSummary, enSummary] = await Promise.all([
-    callLlm(buildMonthlyPrompt(sourceDigests, monthStr, "zh"), LLM_TOKENS_ROLLUP),
-    callLlm(buildMonthlyPrompt(sourceDigests, monthStr, "en"), LLM_TOKENS_ROLLUP),
-  ]);
+  // Generate reports (ZH only, or ZH + EN based on LANGUAGES env var)
+  const langs = ((process.env["LANGUAGES"] ?? "zh,en").split(",").map((s) => s.trim()) ?? ["zh", "en"]) as Lang[];
+
+  const summaryPromises = [callLlm(buildMonthlyPrompt(sourceDigests, monthStr, "zh"), LLM_TOKENS_ROLLUP)];
+  if (langs.includes("en")) summaryPromises.push(callLlm(buildMonthlyPrompt(sourceDigests, monthStr, "en"), LLM_TOKENS_ROLLUP));
+  const summaryResults = await Promise.all(summaryPromises);
+  const zhSummary = summaryResults[0];
+  const enSummary = langs.includes("en") ? summaryResults[1] : "";
 
   const footer = autoGenFooter("zh");
-  const enFooter = autoGenFooter("en");
-
   const zhContent =
     `# ${MONTHLY_REPORT.title.zh} ${monthStr}\n\n` +
     `> 数据来源: ${sourceLabel.zh} | 生成时间: ${utcStr} UTC\n\n` +
@@ -263,17 +262,21 @@ export async function runMonthlyRollup(): Promise<void> {
     zhSummary +
     footer;
 
-  const enContent =
-    `# ${MONTHLY_REPORT.title.en} ${monthStr}\n\n` +
-    `> Sources: ${sourceLabel.en} | Generated: ${utcStr} UTC\n\n` +
-    `---\n\n` +
-    enSummary +
-    enFooter;
-
   console.log(`  Saved ${saveFile(zhContent, dateStr, "ai-monthly.md")}`);
-  console.log(`  Saved ${saveFile(enContent, dateStr, "ai-monthly-en.md")}`);
 
-  await generateRollupHighlights(zhContent, enContent, "ai-monthly", dateStr, 6);
+  if (langs.includes("en")) {
+    const enFooter = autoGenFooter("en");
+    const enContent =
+      `# ${MONTHLY_REPORT.title.en} ${monthStr}\n\n` +
+      `> Sources: ${sourceLabel.en} | Generated: ${utcStr} UTC\n\n` +
+      `---\n\n` +
+      enSummary +
+      enFooter;
+    console.log(`  Saved ${saveFile(enContent, dateStr, "ai-monthly-en.md")}`);
+    await generateRollupHighlights(zhContent, enContent, "ai-monthly", dateStr, 6);
+  } else {
+    await generateRollupHighlights(zhContent, "", "ai-monthly", dateStr, 6);
+  }
 
   if (digestRepo) {
     const url = await createGitHubIssue(MONTHLY_REPORT.issueTitle(monthStr), zhContent, "monthly");

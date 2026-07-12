@@ -1,0 +1,31 @@
+{
+  "zh": {
+    "summary": "Claude Code日处理超50个问题，其高昂token成本催生了“AI成本优化器”这一新兴赛道。",
+    "signals": [
+      {
+        "title": "AI成本优化器",
+        "description": "开发者社区（如ai-cli和ai-community）正热议如何将Claude Code等工具的token成本削减高达77%，这催生了为企业提供AI工作流优化、提示压缩和缓存方案的新服务商机。",
+        "report": "ai-cli"
+      },
+      {
+        "title": "企业级Agent安全管控",
+        "description": "OpenClaw实现了飞书消息撤回时自动取消代理运行的功能。这类细粒度的自动化控制是构建可信企业AI产品的关键，有潜力形成标准化的安全中间件服务。",
+        "report": "ai-agents"
+      },
+      {
+        "title": "Agent工具选择引擎",
+        "description": "像OpenBenchmarks（ai-trending）和ai-hn中提到的项目，正致力于帮助AI Agent自动发现并选择最佳SaaS API。这是解决Agent“最后一公里”集成问题的基础设施层创业机会。",
+        "report": "ai-trending"
+      },
+      {
+        "title": "分布式推理服务",
+        "description": "Mesh LLM（ai-hn）展示了在去中心化网络上进行大模型推理。这挑战了中心化算力垄断，可能催生出更低成本、抗审查的推理即服务（IaaS）新模式。",
+        "report": "ai-hn"
+      }
+    ]
+  },
+  "en": {
+    "summary": "",
+    "signals": []
+  }
+}

@@ -431,6 +431,79 @@ ${sections}
 - 要具体：包含项目名、版本号、star 数等关键信息`;
 }
 
+// ---------------------------------------------------------------------------
+// Opportunity card prompt — generates a narrative summary + opportunity signals
+// for Feishu mobile notifications.
+// ---------------------------------------------------------------------------
+
+export interface OpportunitySignal {
+  title: string;
+  description: string;
+  report: string;
+}
+
+export interface OpportunityCard {
+  summary: string;
+  signals: OpportunitySignal[];
+}
+
+export function buildOpportunityPrompt(
+  reportContents: Record<string, string>,
+  lang: Lang = "zh",
+): string {
+  const sections = Object.entries(reportContents)
+    .map(([id, content]) => `## [${id}]\n\n${content.slice(0, 2000)}`)
+    .join("\n\n---\n\n");
+
+  if (lang === "en") {
+    return `You are an AI opportunity analyst for a college student exploring AI commercialization. Read today's ecosystem reports below and produce a mobile-friendly briefing.
+
+${sections}
+
+---
+
+Return ONLY valid JSON, no markdown fences, no explanation. Format:
+{
+  "summary": "One compelling sentence (under 100 chars) capturing today's biggest story",
+  "signals": [
+    {"title": "Short catchy title (under 30 chars)", "description": "Why this matters + commercial potential in 1-2 sentences", "report": "ai-xxx"},
+    ...
+  ]
+}
+
+Rules:
+- summary: The single most important thing happening today. Make it punchy and specific.
+- signals: Pick 3-5 items across ALL reports that represent real opportunities (not just news). Order by commercial potential.
+- Each signal should answer: "What is it? Why could it make money? What should I do next?"
+- report: The source report ID from [brackets] — use the exact ID so we can link to it
+- Be specific: use real project names, numbers, facts. No vague statements.
+- Think like a startup scout, not a news reader.`;
+  }
+
+  return `你是一位面向大学生的 AI 商业机会分析师。阅读以下今日 AI 生态各报告，生成一份手机友好的精简简报。
+
+${sections}
+
+---
+
+只返回合法的 JSON，不要 markdown 代码块，不要解释。格式：
+{
+  "summary": "一句话概括今天最值得关注的事（不超过50字）",
+  "signals": [
+    {"title": "简短标题（不超过15字）", "description": "这是什么 + 为什么有商业潜力（1-2句话）", "report": "ai-xxx"},
+    ...
+  ]
+}
+
+规则：
+- summary: 今天最重要的一件事，要有画面感，要具体（项目名+数字）
+- signals: 从所有报告中挑选 3-5 个有商业潜力的信号，按潜力排序
+- 每个 signal 要回答：这是什么？能赚钱吗？下一步可以做什么？
+- report: 来源报告的 ID（从方括号中取），用于生成链接
+- 要具体：用真实的项目名、数据。不要泛泛而谈
+- 像一个创业侦察兵一样思考，不是新闻搬运工`;
+}
+
 export function buildHnPrompt(data: HnData, dateStr: string, lang: Lang = "zh"): string {
   const storiesText = data.stories
     .map((s, i) =>
