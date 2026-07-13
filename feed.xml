@@ -6,7 +6,7 @@
     <description>AI 开源生态每日简报 · Daily AI ecosystem digest</description>
     <language>zh-CN</language>
     <atom:link href="https://duanyytop.github.io/agents-radar/feed.xml" rel="self" type="application/rss+xml"/>
-    <lastBuildDate>Mon, 13 Jul 2026 03:29:16 +0000</lastBuildDate>
+    <lastBuildDate>Mon, 13 Jul 2026 04:25:51 +0000</lastBuildDate>
     <item>
       <title>AI CLI 工具社区动态日报 2026-07-13</title>
       <link>https://duanyytop.github.io/agents-radar/#2026-07-13/ai-cli</link>
@@ -2889,6 +2889,76 @@
 <li><strong><a href="https://dev.to/kenielzep97/the-citation-lied-without-lying-the-hard-limit-of-my-memory-gate-2b8e">The Citation Lied Without Lying: The Hard Limit of My Memory Gate</a></strong>：对AI代理记忆与可靠性的深度哲学与实践探讨，理解当前技术边界的必读之文。</li>
 <li><strong><a href="https://dev.to/abdul___rehman/building-a-production-grade-ai-pipeline-scoring-10000-listings-daily-with-llms-16f1">Building a Production-Grade AI Pipeline: Scoring 10,000+ Listings Daily with LLMs</a></strong>：一篇扎实的生产环境复盘，详细披露了架构决策、成本管理与错误处理，是构建同类系统的宝贵蓝图。</li>
 <li><strong><a href="https://dev.to/xulingfeng/12-stories-in-and-a-journalist-came-to-interview-me-45f5">12 Stories In, and a Journalist Came to Interview Me</a></strong>：从个人创作视角看AI如何改变内容生产流程，提供了超越纯技术讨论的人文思考与成功案例。</li>
+</ol>
+]]></content:encoded>
+    </item>
+    <item>
+      <title>AI 工具生态周报 2026-07-13</title>
+      <link>https://duanyytop.github.io/agents-radar/#2026-07-13/ai-weekly</link>
+      <guid isPermaLink="true">https://duanyytop.github.io/agents-radar/#2026-07-13/ai-weekly</guid>
+      <pubDate>Mon, 13 Jul 2026 00:00:00 +0000</pubDate>
+      <description>AI 工具生态周报 2026-W29 覆盖日期: 2026-07-07 ~ 2026-07-13 | 生成时间: 2026-07-13 04:25 UTC AI 工具生态周报 (2026-07-07 至 2026-07-13) 1. 本周要闻 7月13日：OpenClaw 发布 v2026.7.1-beta.6，引入 openclaw worker 云工作者模式并默认启用 GPT-5.6。 7月10日：OpenAI 正式发布 GPT-5.6，社区随即出现大量模型兼容性、成本与性能讨论。 7月8日：Anthropic 发布 Claude Sonnet 5，定位为“最具智能体能力”的 Sonnet 模型，性能接近 Opus 4.8。 7月10日：苹果正式起诉 OpenAI，指控其前员工窃取商业机密，产业格局震荡。 7月11日：Hacker News 社区爆发 “AI 已比其替代的人力更昂贵” 的讨论，直击成本悖论。 7月12日：一篇关于 Claude Code 单次任务产生 3.3 万 Token 开销 的分析文章在 HN 获得 488 分，引爆关于 AI 编程助手实际成本与效率的辩论。 ...</description>
+      <content:encoded><![CDATA[<h1>AI 工具生态周报 2026-W29</h1>
+<blockquote>
+<p>覆盖日期: 2026-07-07 ~ 2026-07-13 | 生成时间: 2026-07-13 04:25 UTC</p>
+</blockquote>
+<hr>
+<h1>AI 工具生态周报 (2026-07-07 至 2026-07-13)</h1>
+<h2>1. 本周要闻</h2>
+<ul>
+<li><strong>7月13日</strong>：<strong>OpenClaw</strong> 发布 <code>v2026.7.1-beta.6</code>，引入 <code>openclaw worker</code> 云工作者模式并默认启用 GPT-5.6。</li>
+<li><strong>7月10日</strong>：<strong>OpenAI</strong> 正式发布 <strong>GPT-5.6</strong>，社区随即出现大量模型兼容性、成本与性能讨论。</li>
+<li><strong>7月8日</strong>：<strong>Anthropic</strong> 发布 <strong>Claude Sonnet 5</strong>，定位为“最具智能体能力”的 Sonnet 模型，性能接近 Opus 4.8。</li>
+<li><strong>7月10日</strong>：<strong>苹果正式起诉 OpenAI</strong>，指控其前员工窃取商业机密，产业格局震荡。</li>
+<li><strong>7月11日</strong>：Hacker News 社区爆发 <strong>“AI 已比其替代的人力更昂贵”</strong> 的讨论，直击成本悖论。</li>
+<li><strong>7月12日</strong>：一篇关于 <strong>Claude Code 单次任务产生 3.3 万 Token 开销</strong> 的分析文章在 HN 获得 488 分，引爆关于 AI 编程助手实际成本与效率的辩论。</li>
+<li><strong>7月13日</strong>：<strong>Qwen Code</strong> 社区探讨 <strong>“守护进程多工作区”</strong> 架构，标志着 CLI 工具向后台化、平台化演进。</li>
+</ul>
+<h2>2. CLI 工具进展</h2>
+<p>本周各主流 AI CLI 工具均处于高强度开发与用户反馈消化期，焦点集中于 <strong>新模型适配、Agent 可靠性与跨平台稳定性</strong>。</p>
+<ul>
+<li><strong>Claude Code</strong>：社区活跃度高，重点修复 <strong>MCP 协议连接稳定性</strong> 及多平台（尤其是 Windows）下的复制、挂起等问题。<strong>Token 开销</strong> 成为本周最热议题，用户对透明化和成本控制的呼声强烈。</li>
+<li><strong>OpenAI Codex</strong>：紧密跟进 <strong>GPT-5.6</strong> 的适配，处理相关的认证、性能回归问题。<strong>多智能体（MultiAgent）</strong> 功能在经历稳定性问题后继续迭代。</li>
+<li><strong>Gemini CLI</strong>：开发重心在于 <strong>子代理（Sub-agent）行为可靠性</strong>、安全漏洞修复及底层组件升级，开发节奏快，PR 合并活跃。</li>
+<li><strong>GitHub Copilot CLI</strong>：社区报告集中在 <strong>TUI 稳定性</strong>、MCP OAuth 认证流程及会话恢复损坏等用户体验问题上。</li>
+<li><strong>Qwen Code</strong>：本周进行了重大架构探讨，提出 <strong>“守护进程多工作区”</strong> 设计，旨在提升后台代理的长期运行效率与资源管理。同时持续打磨 Web Shell 和上下文管理。</li>
+<li><strong>OpenCode</strong>：<strong>V2 版本</strong>持续打磨，在稳定性和新模型支持间平衡。社区同时讨论 MCP 权限控制和多环境适配。</li>
+<li><strong>Pi</strong>：保持高活跃度，快速修复新模型（如 GPT-5.6）的兼容性问题，并扩展工具系统 API。</li>
+</ul>
+<h2>3. AI Agent 生态</h2>
+<p>以 <strong>OpenClaw</strong> 为核心的 Agent 框架生态本周在 <strong>云原生、状态管理与跨平台</strong> 方面取得进展。</p>
+<ul>
+<li><strong>OpenClaw</strong>：发布 <code>v2026.7.1-beta.6</code>，核心进展是引入 <code>openclaw worker</code> 边缘代理模式，并强化了会话管理与网关稳定性。社区长期焦点 <strong>Linux/Windows 原生客户端</strong> 需求（Issue #75）持续高热。项目面临会话状态持久化、内存泄漏等稳定性挑战。</li>
+<li><strong>Hermes Agent</strong>：作为热度最高的 Agent 框架之一，在 GitHub Trending 持续获得关注。</li>
+<li><strong>其他赛道项目</strong>：<strong>NanoBot</strong>、<strong>OpenCode</strong> 等在 Agent 编排、工作流自动化及企业级功能上持续迭代。<strong>OfficeCLI</strong>、<strong>Agent-Reach</strong> 等项目凸显了 Agent 向 <strong>办公自动化</strong> 和 <strong>实时信息获取</strong> 场景渗透的趋势。</li>
+</ul>
+<h2>4. 开源趋势</h2>
+<p>本周 GitHub Trending 呈现 <strong>“Agent 技能工程化”</strong> 与 <strong>“基础设施下沉”</strong> 两大主旋律。</p>
+<ul>
+<li><strong>Agent 技能（Skills）生态爆发</strong>：以 <strong><code>addyosmani/agent-skills</code></strong> 和 <strong><code>mattpocock/skills</code></strong> 为代表的项目获得爆发式增长，社区正系统化为 Claude Code、Codex 等编码 Agent 赋予可复用、可组合的工程技能。</li>
+<li><strong>本地化与隐私 AI</strong>：<strong><code>meetily</code></strong>（本地会议助手）、<strong><code>open-webui</code></strong> 等项目持续热门，反映对数据主权和低延迟的需求。</li>
+<li><strong>高性能 AI 基础设施</strong>：用 <strong>Rust</strong> 构建的框架（如 <code>rig</code>）、轻量级向量数据库（如 <code>alibaba/zvec</code>）及为 Agent 设计的 <strong>沙箱环境</strong>（如腾讯 <code>CubeSandbox</code>）获得开发者青睐，标志着基础设施层向更高性能和专用场景演进。</li>
+</ul>
+<h2>5. HN 社区热议</h2>
+<p>本周 HN 围绕 AI 的讨论情绪复杂，聚焦于 <strong>成本、实用性质疑与产业冲突</strong>。</p>
+<ul>
+<li><strong>核心话题</strong>：<strong>AI 工具的高昂隐性成本</strong>（如 Claude Code 的 Token 开销）引发最大共鸣，开发者对“降本增效”的叙事产生普遍反思。</li>
+<li><strong>模型质量与预期落差</strong>：部分用户批评 <strong>Claude 最新模型</strong> 在实际使用中质量下滑，同时 <strong>GPT-5.6</strong> 的发布虽受瞩目，但其在安全审查等垂直任务上的表现引人深思。</li>
+<li><strong>产业法律与伦理</strong>：<strong>苹果起诉 OpenAI</strong> 事件占据头条，凸显巨头间的竞争白热化。关于 <strong>AI 生成内容标签</strong>、<strong>“AI 泡沫”</strong> 的讨论也反映社区对技术滥用和过度宣传的担忧。</li>
+<li><strong>社区情绪</strong>：在期待技术突破（如数学证明、分布式计算）的同时，对现有工具的可靠性、安全性及商业模式表现出明显的 <strong>疲惫与怀疑</strong>，务实与批判性增强。</li>
+</ul>
+<h2>6. 官方动态</h2>
+<ul>
+<li><strong>Anthropic</strong>：本周发布内容密集，战略清晰。<strong>产品上</strong>，发布 <strong>Claude Sonnet 5</strong>，强化“智能体”定位。<strong>研究上</strong>，发布关于 <strong>LLM “全局工作空间”</strong> 的突破性论文，探索模型内部推理机制。<strong>安全上</strong>，公布“双用知识关闭开关”和 <strong>智能体错位（Agentic Misalignment）</strong> 研究，持续构建安全护城河。</li>
+<li><strong>OpenAI</strong>：本周重点是 <strong>GPT-5.6</strong> 的发布及其后续影响。官网内容更新相对较少，重心可能在于模型发布后的工程化适配与生态支持。</li>
+</ul>
+<h2>7. 下周信号</h2>
+<p>基于本周动态，以下趋势值得关注：</p>
+<ol>
+<li><strong>成本控制工具化</strong>：针对 Token 消耗的监控、分析与优化工具（如 <code>CodexBar</code>、<code>Foreman</code>）可能快速涌现，成为开发者新刚需。</li>
+<li><strong>技能生态标准化</strong>：围绕编码 Agent 的“技能包”可能从自发整理走向初步标准化，或出现技能管理与分享平台。</li>
+<li><strong>Agent 安全治理升温</strong>：继 Anthropic 发布相关研究后，对 Agent 权限、记忆隔离及“内部威胁”防护的讨论与工具开发预计将增加。</li>
+<li><strong>企业级集成深化</strong>：OpenClaw 的“云工作者”模式及 Anthropic 与 UST 的合作案例，预示着 AI 工具与企业现有 IT 基础设施（如 CI/CD、ERP）的集成将成为下一个竞争前沿。</li>
 </ol>
 ]]></content:encoded>
     </item>
@@ -14231,113 +14301,6 @@ Running installer twice appends duplicate <code>copilot</code> PATH lines. Fix c
 </ol>
 <hr>
 <p><em>本日报由 <a href="https://github.com/duanyytop/agents-radar">agents-radar</a> 自动生成。</em></p>
-]]></content:encoded>
-    </item>
-    <item>
-      <title>Product Hunt AI Products Digest 2026-07-11</title>
-      <link>https://duanyytop.github.io/agents-radar/#2026-07-11/ai-ph-en</link>
-      <guid isPermaLink="true">https://duanyytop.github.io/agents-radar/#2026-07-11/ai-ph-en</guid>
-      <pubDate>Sat, 11 Jul 2026 00:00:00 +0000</pubDate>
-      <description>Product Hunt AI Products Digest 2026-07-11 Source: Product Hunt | 14 products | Generated: 2026-07-11 01:28 UTC Here is your Product Hunt AI Products Digest for July 11, 2026. Product Hunt AI Products Digest — July 11, 2026 1. Today&amp;#39;s Highlights Today’s launches underscore a market shift toward agentic infrastructure and security. The top three products—Auriko, Timbal AI, and Perfai Security—all focus on managing, building, or securing AI agents and API calls rather than simple chatbots. Not...</description>
-      <content:encoded><![CDATA[<h1>Product Hunt AI Products Digest 2026-07-11</h1>
-<blockquote>
-<p>Source: <a href="https://www.producthunt.com/">Product Hunt</a> | 14 products | Generated: 2026-07-11 01:28 UTC</p>
-</blockquote>
-<hr>
-<p>Here is your Product Hunt AI Products Digest for July 11, 2026.</p>
-<hr>
-<h3>Product Hunt AI Products Digest — July 11, 2026</h3>
-<h4>1. Today&#39;s Highlights</h4>
-<p>Today’s launches underscore a market shift toward <strong>agentic infrastructure and security</strong>. The top three products—Auriko, Timbal AI, and Perfai Security—all focus on managing, building, or securing AI agents and API calls rather than simple chatbots. Notably, &quot;Vibe coding&quot; security emerged as a distinct niche, with Perfai Security generating the most comments (138) of any product today, signaling high community engagement around safety in rapid AI-app development. Voice interfaces also saw strong traction, with both Toyo (iMessage exec assistant) and GPT-Live (full-duplex voice for ChatGPT) breaking into the top 10.</p>
-<h4>2. Top Products</h4>
-<p><strong>🤖 AI Agents &amp; Assistants</strong></p>
-<ul>
-<li><p><strong>Toyo</strong> — &quot;Exec assistant who lives in iMessage and calls your phone&quot;</p>
-<ul>
-<li>Votes: 315 | Comments: 77</li>
-<li><a href="https://www.producthunt.com/products/toyo?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Product Hunt</a> | <a href="https://www.producthunt.com/r/JR6YTXBV4TJMWG?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Website</a></li>
-<li>Solves the problem of managing tasks directly from iMessage and traditional phone calls, standing out as a deeply integrated personal AI that lives inside your native messaging app.</li>
-</ul>
-</li>
-<li><p><strong>Coasty</strong> — &quot;A Computer-Use-Agent that runs legacy software like a human&quot;</p>
-<ul>
-<li>Votes: 141 | Comments: 39</li>
-<li><a href="https://www.producthunt.com/products/coasty?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Product Hunt</a> | <a href="https://www.producthunt.com/r/LO6M4N5MR3Q7NF?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Website</a></li>
-<li>Solves the problem of automating interactions with legacy enterprise software that lacks APIs, standing out with its human-like computer-use agent approach.</li>
-</ul>
-</li>
-</ul>
-<p><strong>🛠️ Developer Tools</strong></p>
-<ul>
-<li><p><strong>Auriko</strong> — &quot;Trading desk for LLM calls&quot;</p>
-<ul>
-<li>Votes: 568 | Comments: 78</li>
-<li><a href="https://www.producthunt.com/products/auriko?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Product Hunt</a> | <a href="https://www.producthunt.com/r/SYYO32SE2PLD3X?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Website</a></li>
-<li>Solves the problem of managing cost, latency, and reliability across multiple LLM providers (like a financial trading desk for API calls), standing out as a highly specialized infrastructure layer for teams that depend on heavy LLM usage.</li>
-</ul>
-</li>
-<li><p><strong>Perfai Security</strong> — &quot;Find &amp; fix live vulnerabilities in Vibe Apps with 1-prompt.&quot;</p>
-<ul>
-<li>Votes: 325 | Comments: 138</li>
-<li><a href="https://www.producthunt.com/products/perfai-security-for-vibe-coded-apps?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Product Hunt</a> | <a href="https://www.producthunt.com/r/OR3JOQW62RT6YX?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Website</a></li>
-<li>Solves the critical security gap in rapid, AI-generated (&quot;vibe-coded&quot;) applications, standing out by offering one-click vulnerability scanning and remediation specifically for this new app development paradigm.</li>
-</ul>
-</li>
-<li><p><strong>Aura: Agents + Git + Intent Open Source</strong> — &quot;OSS IDE for controlling AI coding agents with built in loops&quot;</p>
-<ul>
-<li>Votes: 178 | Comments: 33</li>
-<li><a href="https://www.producthunt.com/products/aura-28?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Product Hunt</a> | <a href="https://www.producthunt.com/r/SQ2RGATPKVTIGJ?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Website</a></li>
-<li>Solves the problem of managing and iterating AI coding agents within a controlled development environment, standing out as an open-source IDE that tightly integrates agent loops with Git version control.</li>
-</ul>
-</li>
-</ul>
-<p><strong>📊 AI Applications</strong></p>
-<ul>
-<li><p><strong>Timbal AI</strong> — &quot;Build AI agents, workflows, and apps in one stack&quot;</p>
-<ul>
-<li>Votes: 509 | Comments: 104</li>
-<li><a href="https://www.producthunt.com/products/timbal-ai?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Product Hunt</a> | <a href="https://www.producthunt.com/r/7YZFBLZ46SL5CJ?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Website</a></li>
-<li>Solves the problem of fragmented AI development (agents vs. workflows vs. apps), standing out as a unified, no-code/low-code platform that aims to be the single stack for building AI products.</li>
-</ul>
-</li>
-<li><p><strong>KnowYourCompany.ai</strong> — &quot;Uncover Hidden Insights, Invest with Confidence&quot;</p>
-<ul>
-<li>Votes: 29 | Comments: 21</li>
-<li><a href="https://www.producthunt.com/products/knowyourcompany-ai?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Product Hunt</a> | <a href="https://www.producthunt.com/r/DHSYRMZQZVXMUE?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Website</a></li>
-<li>Solves the problem of time-consuming equity research for retail investors, standing out with an AI that surfaces non-obvious insights from financial documents.</li>
-</ul>
-</li>
-</ul>
-<p><strong>🔧 Infrastructure &amp; Models</strong></p>
-<ul>
-<li><p><strong>Opper AI</strong> — &quot;The european AI gateway for agents&quot;</p>
-<ul>
-<li>Votes: 243 | Comments: 48</li>
-<li><a href="https://www.producthunt.com/products/opper-ai?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Product Hunt</a> | <a href="https://www.producthunt.com/r/F6SWKP44TXAE4D?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Website</a></li>
-<li>Solves the problem of GDPR compliance and data residency for European companies building AI agents, standing out as a dedicated European infrastructure gateway offering localized model access and observability.</li>
-</ul>
-</li>
-<li><p><strong>Constellation Gate AI</strong> — &quot;Prompt injection and token savings - #1 in benchmarks&quot;</p>
-<ul>
-<li>Votes: 128 | Comments: 21</li>
-<li><a href="https://www.producthunt.com/products/gate-ai-2?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+radar+%28ID%3A+279857%29">Product Hunt</a> | <a href="https://www.producthunt.com/r/YKWNQKFHRGMDGQ?utm_campaign=producthunt-api&utm_medium=api-v2&utm_source=Application%3A+rawr">Website</a></li>
-<li>Solves the dual problem of LLM security (prompt injection) and cost (token savings), standing out by claiming #1 benchmark performance for both use cases in a single product.</li>
-</ul>
-</li>
-</ul>
-<h4>3. Market Signal</h4>
-<p><strong>Crowded Categories:</strong> The <strong>Developer Tools</strong> category is the most crowded today, with 5 of the 14 products falling under it, including the #1 product (Auriko) and the highest-engagement product (Perfai Security). This indicates a strong, ongoing focus on building the plumbing for the agent economy.</p>
-<p><strong>Innovative Use Cases:</strong> The concept of a &quot;Trading desk for LLM calls&quot; (Auriko) is a novel verticalization of a classic developer concern—cost optimization and reliability. The emergence of <strong>&quot;Vibe coding&quot;</strong> as a first-class topic (Perfai Security, Aura) suggests a new sub-market is solidifying, moving from trend to a supported practice. <strong>Toyo</strong> and <strong>GPT-Live</strong> demonstrate a push toward making AI assistants more ambient and integrated into core communication channels (iMessage, voice calls).</p>
-<p><strong>Open-Source vs. Closed-Source:</strong> The landscape is mixed. High-vote products like Auriko and Timbal AI are closed-source SaaS. However, there is notable open-source activity in the developer tools segment: <strong>Aura</strong> and <strong>Blocks.ai</strong> are both open-source projects. This suggests that while commercial platforms dominate the top of the list, the community is actively building and supporting open-source alternatives for agent control planes and IDEs.</p>
-<h4>4. Worth Trying</h4>
-<p>For developers looking to experiment today, here are the top picks:</p>
-<ol>
-<li><strong>Auriko</strong> — If you use multiple LLMs (OpenAI, Anthropic, Google), this is immediately useful for routing calls to the cheapest/fastest provider and managing costs.</li>
-<li><strong>Perfai Security</strong> — If you build or use any &quot;vibe-coded&quot; apps (apps built with AI coding assistants), this is a must-try to quickly scan for critical vulnerabilities before going live.</li>
-<li><strong>Aura: Agents + Git + Intent</strong> — As an open-source IDE purpose-built for controlling AI coding agents with proper Git versioning, it&#39;s a powerful tool for developers who feel overwhelmed by agentic loops.</li>
-</ol>
-<hr>
-<p><em>This digest is auto-generated by <a href="https://github.com/duanyytop/agents-radar">agents-radar</a>.</em></p>
 ]]></content:encoded>
     </item>
   </channel>
