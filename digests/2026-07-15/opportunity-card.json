@@ -1,0 +1,28 @@
+{
+  "zh": {
+    "summary": "Graphify单日狂揽近2000星，成为为AI编码助手提供知识图谱‘技能’的爆发性基础设施。",
+    "signals": [
+      {
+        "title": "Graphify：为AI编码插上知识图谱翅膀",
+        "description": "将任意代码/文档转化为可查询知识图谱，作为Claude Code等AI编码助手的核心‘技能’，解决其上下文理解有限的根本痛点。市场需求极其明确，可面向开发者和企业直接收费。",
+        "report": "ai-trending"
+      },
+      {
+        "title": "Claude for Teachers：垂直化商业路径验证",
+        "description": "Anthropic推出面向K-12教师的免费产品，验证了AI工具从通用到垂直行业解决方案的可行路径。教育市场的规模与付费意愿已证实，可效仿此模式，快速开发针对其他垂直领域（如法律、医疗）的AI助手。",
+        "report": "ai-web"
+      },
+      {
+        "title": "mem0：Agent时代的‘记忆即服务’",
+        "description": "为各类AI Agent提供统一的跨会话持久化记忆接口，是解决Agent‘无记忆’痛点的关键基础设施。作为底层服务层，具有成为企业级API/SDK的商业模式潜力。",
+        "report": "ai-trending"
+      },
+      {
+        "title": "Agent成本优化：从炫技到落地的刚需",
+        "description": "开发者社区已出现能降低60%Token账单的具体方案，表明Agent应用的成本控制成为现实瓶颈。围绕Token消耗、推理优化提供SaaS工具或精细化运营服务，是直接的变现机会。",
+        "report": "ai-community"
+      }
+    ]
+  },
+  "en": {}
+}
