@@ -4,6 +4,7 @@
 
 import type { RepoConfig, RepoFetch } from "./github.ts";
 import type { RepoDigest } from "./prompts.ts";
+import { PRIMARY_TOOL_IDS } from "./prompts.ts";
 import { type Lang, CLI_REPORT, OPENCLAW_REPORT } from "./i18n.ts";
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,83 @@ export function buildCliReportContent(
     toolSections +
     footer
   );
+}
+
+/**
+ * Build the restructured CLI report with topic-organized overview.
+ * Structure: Title → Meta → Overview (topic comparison) → Primary tool details (collapsible) → Secondary tools (collapsible)
+ */
+export function buildTopicReportContent(
+  cliDigests: RepoDigest[],
+  topicComparison: string,
+  utcStr: string,
+  dateStr: string,
+  footer: string,
+  _skillsRepo: string,
+  lang: Lang = "zh",
+): string {
+  const primaryDigests = cliDigests.filter((d) => PRIMARY_TOOL_IDS.has(d.config.id));
+  const secondaryDigests = cliDigests.filter((d) => !PRIMARY_TOOL_IDS.has(d.config.id));
+
+  const title = `# ${CLI_REPORT.title[lang]} ${dateStr}\n\n`;
+  const meta = CLI_REPORT.meta(utcStr, cliDigests.length, lang);
+
+  // Primary tool detail sections (collapsible)
+  const primarySections = primaryDigests
+    .map((d) => {
+      return [
+        `<details>`,
+        `<summary><strong>${d.config.name}</strong> — <a href="https://github.com/${d.config.repo}">${d.config.repo}</a></summary>`,
+        ``,
+        d.summary,
+        ``,
+        `</details>`,
+      ].join("\n");
+    })
+    .join("\n\n");
+
+  // Secondary tool detail sections (collapsible)
+  const secondarySections = secondaryDigests
+    .map((d) => {
+      const hasData = d.issues.length || d.prs.length || d.releases.length;
+      if (!hasData) return "";
+      return [
+        `<details>`,
+        `<summary><strong>${d.config.name}</strong> — <a href="https://github.com/${d.config.repo}">${d.config.repo}</a></summary>`,
+        ``,
+        d.summary,
+        ``,
+        `</details>`,
+      ].join("\n");
+    })
+    .filter(Boolean)
+    .join("\n\n");
+
+  const repoLinks = cliDigests
+    .map((d) => `- [${d.config.name}](https://github.com/${d.config.repo})`)
+    .join("\n");
+
+  // Build sections conditionally
+  const sections = [
+    title,
+    meta,
+    `${repoLinks}\n\n`,
+    `---\n\n`,
+    topicComparison,
+    `\n\n---\n\n`,
+    `## ${CLI_REPORT.primaryTools[lang]}\n\n`,
+    primarySections,
+  ];
+
+  if (secondarySections) {
+    sections.push(`\n\n---\n\n`);
+    sections.push(`## ${CLI_REPORT.secondaryTools[lang]}\n\n`);
+    sections.push(secondarySections);
+  }
+
+  sections.push(footer);
+
+  return sections.join("");
 }
 
 // ---------------------------------------------------------------------------
