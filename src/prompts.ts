@@ -473,3 +473,139 @@ ${sections}
 语言要求：简洁专业，有数据支撑，适合技术决策者和开发者阅读。
 `;
 }
+
+/**
+ * Build a prompt that generates a topic-organized overview of all CLI tools.
+ * Primary tools (Codex, Claude Code) get detailed treatment; secondary tools get one-liners.
+ */
+export function buildTopicComparisonPrompt(
+  cliDigests: RepoDigest[],
+  skillsSummary: string,
+  dateStr: string,
+  lang: Lang = "zh",
+): string {
+  const primaryDigests = cliDigests.filter((d) => PRIMARY_TOOL_IDS.has(d.config.id));
+  const secondaryDigests = cliDigests.filter((d) => !PRIMARY_TOOL_IDS.has(d.config.id));
+
+  const primarySections = primaryDigests
+    .map((d) => {
+      const skills =
+        d.config.id === "claude-code" && skillsSummary
+          ? `\n\n### Claude Code Skills 动态\n${skillsSummary}`
+          : "";
+      return `### ${d.config.name} (github.com/${d.config.repo})\n${d.summary}${skills}`;
+    })
+    .join("\n\n---\n\n");
+
+  const secondarySections = secondaryDigests
+    .map((d) => {
+      const hasData = d.issues.length || d.prs.length || d.releases.length;
+      if (!hasData) return `### ${d.config.name}\n过去24小时无活动。`;
+      return `### ${d.config.name} (github.com/${d.config.repo})\n${d.summary}`;
+    })
+    .join("\n\n---\n\n");
+
+  if (lang === "en") {
+    return `You are a senior technical analyst of AI developer tools. Below are community digest summaries for ${dateStr}.
+
+## Primary Tools (detailed)
+${primarySections}
+
+---
+
+## Secondary Tools (summaries)
+${secondarySections}
+
+---
+
+Generate a topic-organized overview report in English with these sections:
+
+### Section 1: Today's Overview (3-5 items)
+Pick the 3-5 most important dynamics across ALL tools. Each item is one sentence: what happened + why it matters. These serve as a table of contents — readers use them to decide which topics to expand.
+
+### Section 2: Topic-Based Expansion
+Group dynamics by topic (topics are NOT fixed — choose based on today's actual data). Possible topics include:
+- New model support/performance
+- Critical bugs / stability
+- Context management / memory
+- Agent capabilities / background tasks
+- MCP / tool integration
+- Cost and performance
+- Workflow / IDE integration changes
+
+For each topic:
+- **Primary tools (Codex, Claude Code):** Detailed — what changed, why it matters, impact on users (3-5 items per tool per topic)
+- **Secondary tools:** One sentence per tool that has relevant dynamics. Tools with nothing relevant to the topic are omitted. If a secondary tool has a breakthrough or high-value signal, give it slightly more detail.
+
+Filtering rules (strictly exclude):
+- Company strategy / business news / market positioning
+- Community governance / disputes
+- Pure UI details (button placement, placeholder text)
+- Project management / CI pipelines
+- Premetry RFCs with no concrete implementation
+- License / ToS changes
+
+Priority dimensions (always surface):
+- Context management, session persistence, memory
+- Agent/agentic capabilities, background tasks
+- Code understanding quality, AST awareness
+- MCP/tool integration reliability
+- Cost and performance (tokens, latency, caching)
+- New model real-world performance
+- Critical bugs affecting users
+
+Style: concise, professional, action-oriented. Every item must help the reader decide "does this affect me?"
+`;
+  }
+
+  return `你是一位专注于 AI 开发工具的技术分析师。以下是 ${dateStr} 各主流 AI CLI 工具的社区动态摘要。
+
+## 主力工具（详细）
+${primarySections}
+
+---
+
+## 其他工具（摘要）
+${secondarySections}
+
+---
+
+请基于上述各工具的动态，生成一份按主题组织的概览报告，包含以下两部分：
+
+### 第一部分：今日概览（3-5 条）
+跨所有工具精选今日最重要的 3-5 条动态。每条一句话：发生了什么 + 为什么值得关注。这是报告的索引入口，帮读者在 30 秒内决定展开哪些主题。
+
+### 第二部分：按主题展开
+根据今天的实际数据自行归纳主题（主题不固定）。可能的主题方向：
+- 新模型支持/适配
+- 重大 Bug / 稳定性问题
+- 上下文管理 / 记忆能力
+- Agent 代理能力 / 后台任务
+- MCP / 工具集成
+- 成本与性能
+- 工作流 / IDE 集成变化
+
+每个主题的格式：
+- **主力工具（Codex、Claude Code）：** 详细展开，每条说明：更新了什么 → 为什么重要 → 对用户的影响（每个工具每主题 3-5 条）
+- **其他工具：** 一句话概括有价值的动态。没动态的工具不出现。如果某个次要工具有突破性或高价值信号，可以稍微多给一些篇幅。
+
+过滤规则（严格排除以下内容）：
+- 公司战略/商业新闻/市场定位
+- 社区治理/争议
+- 纯 UI 细节（按钮位置、占位符文案）
+- 项目管理/CI 流程
+- 无行动力的远期 RFC
+- 许可证/服务条款变更
+
+重点关注维度（优先展示）：
+- 上下文管理、会话持久化、记忆能力
+- Agent/代理能力、后台任务、多代理协作
+- 代码理解与编辑质量、AST 感知
+- MCP/工具集成、协议可靠性
+- 成本与性能（token 消耗、延迟、缓存）
+- 新模型的实际表现和适配问题
+- 重大 Bug 和稳定性问题
+
+语言要求：简洁专业，有数据支撑，每条信息都要帮助读者判断"这跟我有没有关系"。
+`;
+}
