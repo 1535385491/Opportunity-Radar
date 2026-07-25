@@ -5,6 +5,9 @@
 import type { RepoConfig, GitHubItem, GitHubRelease } from "./github.ts";
 import type { Lang } from "./i18n.ts";
 
+/** Tool IDs that get primary (deep) treatment in the topic-organized report. */
+export const PRIMARY_TOOL_IDS = new Set(["claude-code", "codex"]);
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -116,11 +119,28 @@ ${prsText}
 Generate a structured English digest with the following sections:
 
 1. **Today's Highlights** - 2-3 sentences summarizing the most important updates
-2. **Releases** - If new versions exist, summarize changes; omit if none
-3. **Hot Issues** - Pick 10 noteworthy Issues, explain why they matter and community reaction
-4. **Key PR Progress** - Pick 10 important PRs, describe features or fixes
+2. **Releases** - If new versions exist, summarize changes and user impact; omit if none
+3. **Hot Issues** - Pick 5 noteworthy Issues, each with: what it is → why it matters → user impact
+4. **Key PR Progress** - Pick 5 important PRs, each with: what changed → what problem it solves → user impact
 5. **Feature Request Trends** - Distill the most-requested feature directions from all Issues
 6. **Developer Pain Points** - Summarize recurring developer frustrations or high-frequency requests
+
+Filtering rules (strictly enforce — exclude these types):
+- Company strategy / business news / market positioning / funding / acquisitions
+- Internal community governance / disputes / namespace abuse discussions
+- Pure UI details (button placement, placeholder text, copy-paste glitches)
+- Project management / CI pipelines / CONTRIBUTING.md / release note automation
+- Premature RFCs (discussion-only proposals with no concrete implementation)
+- License / terms of service changes
+
+Prioritize (surface prominently):
+- Context management, session persistence, memory capabilities
+- Agent/agentic capabilities, background tasks, multi-agent collaboration
+- Code understanding and editing quality, AST awareness
+- MCP/tool integration, protocol reliability
+- Cost and performance (token consumption, latency, caching)
+- New model real-world performance and adaptation issues
+- Critical bugs and stability issues
 
 Style: concise and professional, suited for technical developers. Include GitHub links for each item.
 `;
@@ -144,11 +164,28 @@ ${prsText}
 请生成一份结构清晰的中文日报，包含以下部分：
 
 1. **今日速览** - 用2-3句话概括今天最重要的动态
-2. **版本发布** - 如有新版本，总结更新内容；无则省略
-3. **社区热点 Issues** - 挑选 10 个最值得关注的 Issue，说明为什么重要、社区反应如何
-4. **重要 PR 进展** - 挑选 10 个重要的 PR，说明功能或修复内容
-5. **功能需求趋势** - 从所有 Issues 中提炼出社区最关注的功能方向（如 IDE 集成、性能、新模型支持等）
+2. **版本发布** - 如有新版本，总结更新内容和对用户的影响；无则省略
+3. **社区热点 Issues** - 挑选 5 个最值得关注的 Issue，每条说明：是什么 → 为什么重要 → 对用户的影响
+4. **重要 PR 进展** - 挑选 5 个重要的 PR，每条说明：改了什么 → 解决什么问题 → 对用户的影响
+5. **功能需求趋势** - 从所有 Issues 中提炼出社区最关注的功能方向
 6. **开发者关注点** - 总结开发者反馈中的痛点或高频需求
+
+过滤规则（严格遵守，以下类型不要出现在报告中）：
+- 公司战略/商业新闻/市场定位/融资/收购
+- 社区内部治理/争议/命名空间滥用讨论
+- 纯 UI 细节（按钮位置、占位符文案、文本复制乱码等）
+- 项目管理/CI 流程/CONTRIBUTING.md/发布说明自动化
+- 无行动力的远期 RFC（仅讨论阶段、无具体实现的提案）
+- 许可证/服务条款变更
+
+重点关注（优先展示）：
+- 上下文管理、会话持久化、记忆能力
+- Agent/代理能力、后台任务、多代理协作
+- 代码理解与编辑质量、AST 感知
+- MCP/工具集成、协议可靠性
+- 成本与性能（token 消耗、延迟、缓存）
+- 新模型的实际表现和适配问题
+- 重大 Bug 和稳定性问题
 
 语言要求：简洁专业，适合技术开发者阅读。每个条目附上 GitHub 链接。
 `;
