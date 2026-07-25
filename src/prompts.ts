@@ -5,6 +5,9 @@
 import type { RepoConfig, GitHubItem, GitHubRelease } from "./github.ts";
 import type { Lang } from "./i18n.ts";
 
+/** Tool IDs that get primary (deep) treatment in the topic-organized report. */
+export const PRIMARY_TOOL_IDS = new Set(["claude-code", "codex"]);
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -116,11 +119,28 @@ ${prsText}
 Generate a structured English digest with the following sections:
 
 1. **Today's Highlights** - 2-3 sentences summarizing the most important updates
-2. **Releases** - If new versions exist, summarize changes; omit if none
-3. **Hot Issues** - Pick 10 noteworthy Issues, explain why they matter and community reaction
-4. **Key PR Progress** - Pick 10 important PRs, describe features or fixes
+2. **Releases** - If new versions exist, summarize changes and user impact; omit if none
+3. **Hot Issues** - Pick 5 noteworthy Issues, each with: what it is → why it matters → user impact
+4. **Key PR Progress** - Pick 5 important PRs, each with: what changed → what problem it solves → user impact
 5. **Feature Request Trends** - Distill the most-requested feature directions from all Issues
 6. **Developer Pain Points** - Summarize recurring developer frustrations or high-frequency requests
+
+Filtering rules (strictly enforce — exclude these types):
+- Company strategy / business news / market positioning / funding / acquisitions
+- Internal community governance / disputes / namespace abuse discussions
+- Pure UI details (button placement, placeholder text, copy-paste glitches)
+- Project management / CI pipelines / CONTRIBUTING.md / release note automation
+- Premature RFCs (discussion-only proposals with no concrete implementation)
+- License / terms of service changes
+
+Prioritize (surface prominently):
+- Context management, session persistence, memory capabilities
+- Agent/agentic capabilities, background tasks, multi-agent collaboration
+- Code understanding and editing quality, AST awareness
+- MCP/tool integration, protocol reliability
+- Cost and performance (token consumption, latency, caching)
+- New model real-world performance and adaptation issues
+- Critical bugs and stability issues
 
 Style: concise and professional, suited for technical developers. Include GitHub links for each item.
 `;
@@ -144,11 +164,28 @@ ${prsText}
 请生成一份结构清晰的中文日报，包含以下部分：
 
 1. **今日速览** - 用2-3句话概括今天最重要的动态
-2. **版本发布** - 如有新版本，总结更新内容；无则省略
-3. **社区热点 Issues** - 挑选 10 个最值得关注的 Issue，说明为什么重要、社区反应如何
-4. **重要 PR 进展** - 挑选 10 个重要的 PR，说明功能或修复内容
-5. **功能需求趋势** - 从所有 Issues 中提炼出社区最关注的功能方向（如 IDE 集成、性能、新模型支持等）
+2. **版本发布** - 如有新版本，总结更新内容和对用户的影响；无则省略
+3. **社区热点 Issues** - 挑选 5 个最值得关注的 Issue，每条说明：是什么 → 为什么重要 → 对用户的影响
+4. **重要 PR 进展** - 挑选 5 个重要的 PR，每条说明：改了什么 → 解决什么问题 → 对用户的影响
+5. **功能需求趋势** - 从所有 Issues 中提炼出社区最关注的功能方向
 6. **开发者关注点** - 总结开发者反馈中的痛点或高频需求
+
+过滤规则（严格遵守，以下类型不要出现在报告中）：
+- 公司战略/商业新闻/市场定位/融资/收购
+- 社区内部治理/争议/命名空间滥用讨论
+- 纯 UI 细节（按钮位置、占位符文案、文本复制乱码等）
+- 项目管理/CI 流程/CONTRIBUTING.md/发布说明自动化
+- 无行动力的远期 RFC（仅讨论阶段、无具体实现的提案）
+- 许可证/服务条款变更
+
+重点关注（优先展示）：
+- 上下文管理、会话持久化、记忆能力
+- Agent/代理能力、后台任务、多代理协作
+- 代码理解与编辑质量、AST 感知
+- MCP/工具集成、协议可靠性
+- 成本与性能（token 消耗、延迟、缓存）
+- 新模型的实际表现和适配问题
+- 重大 Bug 和稳定性问题
 
 语言要求：简洁专业，适合技术开发者阅读。每个条目附上 GitHub 链接。
 `;
@@ -405,16 +442,14 @@ ${sections}
 
 ---
 
-Generate a cross-tool comparison report in English with these sections:
+Generate a cross-tool signals report in English with these sections:
 
-1. **Ecosystem Overview** - 3-5 sentences on the overall AI CLI tools development landscape
-2. **Activity Comparison** - Table comparing Issues count, PR count, Release status for each tool today
-3. **Shared Feature Directions** - Requirements appearing across multiple tool communities (note which tools, specific needs)
-4. **Differentiation Analysis** - Differences in feature focus, target users, and technical approach
-5. **Community Momentum & Maturity** - Which tools have more active communities, which are rapidly iterating
-6. **Trend Signals** - Industry trends from community feedback, reference value for developers
+1. **Shared Signals** - Requirements or issues appearing across multiple tool communities (note which tools, specific needs). Omit if no clear cross-tool patterns exist.
+2. **Emerging Technical Directions** - Frontier tech signals from community feedback, must be related to how developers actually use the tools (backed by concrete dynamics, not pure speculation).
 
-Style: concise and professional, data-backed, suited for technical decision-makers and developers.
+Filtering rules: exclude company strategy/business news, community governance/disputes, pure UI details, project management/CI, premature RFCs.
+
+Style: concise and professional, data-backed, suited for technical developers.
 `;
   }
 
@@ -424,15 +459,149 @@ ${sections}
 
 ---
 
-请基于上述各工具的动态，生成一份横向对比分析报告，包含以下部分：
+请基于上述各工具的动态，提炼跨工具共同关注的功能方向，包含以下部分：
 
-1. **生态全景** - 用3-5句话概括当前 AI CLI 工具整体发展态势
-2. **各工具活跃度对比** - 以表格形式汇总各工具今日的 Issues 数、PR 数、Release 情况
-3. **共同关注的功能方向** - 多个工具社区都在关注的需求（说明哪些工具、具体诉求）
-4. **差异化定位分析** - 各工具在功能侧重、目标用户、技术路线上的差异
-5. **社区热度与成熟度** - 哪些工具社区更活跃，哪些处于快速迭代阶段
-6. **值得关注的趋势信号** - 从社区反馈中提炼出的行业趋势，对开发者有何参考价值
+1. **跨工具共同信号** - 多个工具社区同时出现的需求或问题（注明涉及哪些工具、具体诉求）。如果没有明显的共同信号，可以省略。
+2. **新兴技术方向** - 从社区反馈中提炼的前沿技术信号，必须与开发者实际使用方式相关（有具体动态支撑，不是纯展望）
 
-语言要求：简洁专业，有数据支撑，适合技术决策者和开发者阅读。
+过滤规则：不要包含公司战略/商业新闻、社区治理/争议、纯 UI 细节、项目管理/CI 流程、远期 RFC。
+
+语言要求：简洁专业，有数据支撑，适合技术开发者阅读。
+`;
+}
+
+/**
+ * Build a prompt that generates a topic-organized overview of all CLI tools.
+ * Primary tools (Codex, Claude Code) get detailed treatment; secondary tools get one-liners.
+ */
+export function buildTopicComparisonPrompt(
+  cliDigests: RepoDigest[],
+  skillsSummary: string,
+  dateStr: string,
+  lang: Lang = "zh",
+): string {
+  const primaryDigests = cliDigests.filter((d) => PRIMARY_TOOL_IDS.has(d.config.id));
+  const secondaryDigests = cliDigests.filter((d) => !PRIMARY_TOOL_IDS.has(d.config.id));
+
+  const primarySections = primaryDigests
+    .map((d) => {
+      const skills =
+        d.config.id === "claude-code" && skillsSummary
+          ? `\n\n### Claude Code Skills 动态\n${skillsSummary}`
+          : "";
+      return `### ${d.config.name} (github.com/${d.config.repo})\n${d.summary}${skills}`;
+    })
+    .join("\n\n---\n\n");
+
+  const secondarySections = secondaryDigests
+    .map((d) => {
+      const hasData = d.issues.length || d.prs.length || d.releases.length;
+      if (!hasData) return `### ${d.config.name}\n过去24小时无活动。`;
+      return `### ${d.config.name} (github.com/${d.config.repo})\n${d.summary}`;
+    })
+    .join("\n\n---\n\n");
+
+  if (lang === "en") {
+    return `You are a senior technical analyst of AI developer tools. Below are community digest summaries for ${dateStr}.
+
+## Primary Tools (detailed)
+${primarySections}
+
+---
+
+## Secondary Tools (summaries)
+${secondarySections}
+
+---
+
+Generate a topic-organized overview report in English with these sections:
+
+### Section 1: Today's Overview (3-5 items)
+Pick the 3-5 most important dynamics across ALL tools. Each item is one sentence: what happened + why it matters. These serve as a table of contents — readers use them to decide which topics to expand.
+
+### Section 2: Topic-Based Expansion
+Group dynamics by topic (topics are NOT fixed — choose based on today's actual data). Possible topics include:
+- New model support/performance
+- Critical bugs / stability
+- Context management / memory
+- Agent capabilities / background tasks
+- MCP / tool integration
+- Cost and performance
+- Workflow / IDE integration changes
+
+For each topic:
+- **Primary tools (Codex, Claude Code):** Detailed — what changed, why it matters, impact on users (3-5 items per tool per topic)
+- **Secondary tools:** One sentence per tool that has relevant dynamics. Tools with nothing relevant to the topic are omitted. If a secondary tool has a breakthrough or high-value signal, give it slightly more detail.
+
+Filtering rules (strictly exclude):
+- Company strategy / business news / market positioning
+- Community governance / disputes
+- Pure UI details (button placement, placeholder text)
+- Project management / CI pipelines
+- Premetry RFCs with no concrete implementation
+- License / ToS changes
+
+Priority dimensions (always surface):
+- Context management, session persistence, memory
+- Agent/agentic capabilities, background tasks
+- Code understanding quality, AST awareness
+- MCP/tool integration reliability
+- Cost and performance (tokens, latency, caching)
+- New model real-world performance
+- Critical bugs affecting users
+
+Style: concise, professional, action-oriented. Every item must help the reader decide "does this affect me?"
+`;
+  }
+
+  return `你是一位专注于 AI 开发工具的技术分析师。以下是 ${dateStr} 各主流 AI CLI 工具的社区动态摘要。
+
+## 主力工具（详细）
+${primarySections}
+
+---
+
+## 其他工具（摘要）
+${secondarySections}
+
+---
+
+请基于上述各工具的动态，生成一份按主题组织的概览报告，包含以下两部分：
+
+### 第一部分：今日概览（3-5 条）
+跨所有工具精选今日最重要的 3-5 条动态。每条一句话：发生了什么 + 为什么值得关注。这是报告的索引入口，帮读者在 30 秒内决定展开哪些主题。
+
+### 第二部分：按主题展开
+根据今天的实际数据自行归纳主题（主题不固定）。可能的主题方向：
+- 新模型支持/适配
+- 重大 Bug / 稳定性问题
+- 上下文管理 / 记忆能力
+- Agent 代理能力 / 后台任务
+- MCP / 工具集成
+- 成本与性能
+- 工作流 / IDE 集成变化
+
+每个主题的格式：
+- **主力工具（Codex、Claude Code）：** 详细展开，每条说明：更新了什么 → 为什么重要 → 对用户的影响（每个工具每主题 3-5 条）
+- **其他工具：** 一句话概括有价值的动态。没动态的工具不出现。如果某个次要工具有突破性或高价值信号，可以稍微多给一些篇幅。
+
+过滤规则（严格排除以下内容）：
+- 公司战略/商业新闻/市场定位
+- 社区治理/争议
+- 纯 UI 细节（按钮位置、占位符文案）
+- 项目管理/CI 流程
+- 无行动力的远期 RFC
+- 许可证/服务条款变更
+
+重点关注维度（优先展示）：
+- 上下文管理、会话持久化、记忆能力
+- Agent/代理能力、后台任务、多代理协作
+- 代码理解与编辑质量、AST 感知
+- MCP/工具集成、协议可靠性
+- 成本与性能（token 消耗、延迟、缓存）
+- 新模型的实际表现和适配问题
+- 重大 Bug 和稳定性问题
+
+语言要求：简洁专业，有数据支撑，每条信息都要帮助读者判断"这跟我有没有关系"。
 `;
 }

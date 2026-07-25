@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { buildCliReportContent, buildOpenclawReportContent } from "../report-builders.ts";
+import {
+  buildCliReportContent,
+  buildOpenclawReportContent,
+  buildTopicReportContent,
+} from "../report-builders.ts";
 import type { RepoDigest } from "../prompts.ts";
 import type { GitHubItem, GitHubRelease } from "../github.ts";
 
@@ -147,5 +151,95 @@ describe("buildOpenclawReportContent", () => {
     expect(result).toContain("# OpenClaw Ecosystem Digest 2026-03-09");
     expect(result).toContain("OpenClaw Deep Dive");
     expect(result).toContain("Cross-Ecosystem Comparison");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildTopicReportContent
+// ---------------------------------------------------------------------------
+
+describe("buildTopicReportContent", () => {
+  const digests = [
+    makeDigest({
+      config: { id: "claude-code", repo: "anthropics/claude-code", name: "Claude Code" },
+      summary: "Claude Code summary",
+    }),
+    makeDigest({
+      config: { id: "codex", repo: "openai/codex", name: "OpenAI Codex" },
+      summary: "Codex summary",
+    }),
+    makeDigest({
+      config: { id: "gemini-cli", repo: "google-gemini/gemini-cli", name: "Gemini CLI" },
+      summary: "Gemini summary",
+      issues: [{ number: 1 } as unknown as GitHubItem],
+    }),
+  ];
+
+  it("includes topic comparison content", () => {
+    const result = buildTopicReportContent(
+      digests,
+      "## Topic content here",
+      "12:00",
+      "2026-07-26",
+      "\n\nfooter",
+      "anthropics/skills",
+      "zh",
+    );
+    expect(result).toContain("Topic content here");
+  });
+
+  it("includes report title with date", () => {
+    const result = buildTopicReportContent(digests, "", "12:00", "2026-07-26", "", "anthropics/skills", "zh");
+    expect(result).toContain("2026-07-26");
+  });
+
+  it("wraps primary tools in collapsible details", () => {
+    const result = buildTopicReportContent(digests, "", "12:00", "2026-07-26", "", "anthropics/skills", "zh");
+    expect(result).toContain("<summary><strong>Claude Code</strong>");
+    expect(result).toContain("<summary><strong>OpenAI Codex</strong>");
+  });
+
+  it("wraps secondary tools in collapsible details", () => {
+    const result = buildTopicReportContent(digests, "", "12:00", "2026-07-26", "", "anthropics/skills", "zh");
+    expect(result).toContain("<summary><strong>Gemini CLI</strong>");
+  });
+
+  it("uses Chinese labels for zh lang", () => {
+    const result = buildTopicReportContent(digests, "", "12:00", "2026-07-26", "", "anthropics/skills", "zh");
+    expect(result).toContain("主力工具详情");
+    expect(result).toContain("其他工具动态");
+  });
+
+  it("uses English labels for en lang", () => {
+    const result = buildTopicReportContent(digests, "", "12:00", "2026-07-26", "", "anthropics/skills", "en");
+    expect(result).toContain("Primary Tool Details");
+    expect(result).toContain("Other Tool Updates");
+  });
+
+  it("includes repo links", () => {
+    const result = buildTopicReportContent(digests, "", "12:00", "2026-07-26", "", "anthropics/skills", "zh");
+    expect(result).toContain("[Claude Code](https://github.com/anthropics/claude-code)");
+    expect(result).toContain("[OpenAI Codex](https://github.com/openai/codex)");
+  });
+
+  it("includes footer", () => {
+    const result = buildTopicReportContent(
+      digests,
+      "",
+      "12:00",
+      "2026-07-26",
+      "\n\nmy footer",
+      "anthropics/skills",
+      "zh",
+    );
+    expect(result).toContain("my footer");
+  });
+
+  it("separates primary and secondary sections", () => {
+    const result = buildTopicReportContent(digests, "", "12:00", "2026-07-26", "", "anthropics/skills", "zh");
+    const primaryIdx = result.indexOf("主力工具详情");
+    const secondaryIdx = result.indexOf("其他工具动态");
+    expect(primaryIdx).toBeGreaterThan(0);
+    expect(secondaryIdx).toBeGreaterThan(primaryIdx);
   });
 });

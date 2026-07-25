@@ -26,6 +26,7 @@ import {
   buildComparisonPrompt,
   buildPeersComparisonPrompt,
   buildSkillsPrompt,
+  buildTopicComparisonPrompt,
 } from "./prompts.ts";
 import {
   buildTrendingPrompt,
@@ -35,7 +36,7 @@ import {
   type OpportunityCard,
 } from "./prompts-data.ts";
 import { callLlm, parseLlmJson, saveFile, autoGenFooter, LLM_TOKENS_TRENDING } from "./report.ts";
-import { buildCliReportContent, buildOpenclawReportContent } from "./report-builders.ts";
+import { buildOpenclawReportContent, buildTopicReportContent } from "./report-builders.ts";
 import {
   saveWebReport,
   saveTrendingReport,
@@ -369,7 +370,7 @@ async function main(): Promise<void> {
   ];
 
   console.log(`  Calling LLM for comparative analyses...`);
-  const [zhCompResults, enCompResults] = await Promise.all([
+  const [zhCompResults, enCompResults, zhTopicComp, enTopicComp] = await Promise.all([
     Promise.all(zhCompPromises),
     langs.includes("en")
       ? Promise.all([
@@ -379,12 +380,25 @@ async function main(): Promise<void> {
           ),
         ])
       : Promise.resolve(["", ""]),
+    callLlm(
+      buildTopicComparisonPrompt(zhSummaries.cliDigests, zhSummaries.skillsSummary, dateStr, "zh"),
+      8192,
+    ),
+    langs.includes("en")
+      ? callLlm(
+          buildTopicComparisonPrompt(enSummaries.cliDigests, enSummaries.skillsSummary, dateStr, "en"),
+          8192,
+        )
+      : Promise.resolve(""),
   ]);
 
-  const comparisonByLang: Record<Lang, string> = { zh: zhCompResults[0] ?? "", en: enCompResults[0] ?? "" };
   const peersComparisonByLang: Record<Lang, string> = {
     zh: zhCompResults[1] ?? "",
     en: enCompResults[1] ?? "",
+  };
+  const topicCompByLang: Record<Lang, string> = {
+    zh: zhTopicComp ?? "",
+    en: enTopicComp ?? "",
   };
 
   // 4. Build + save all reports
@@ -396,10 +410,9 @@ async function main(): Promise<void> {
     const ft = autoGenFooter(lang);
     const suffix = lang === "en" ? "-en" : "";
 
-    cliContent[lang] = buildCliReportContent(
+    cliContent[lang] = buildTopicReportContent(
       s.cliDigests,
-      s.skillsSummary,
-      comparisonByLang[lang],
+      topicCompByLang[lang],
       utcStr,
       dateStr,
       ft,
