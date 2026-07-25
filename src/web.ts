@@ -10,6 +10,7 @@
  * State is persisted in digests/web-state.json (committed to git by the Actions workflow).
  */
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { sleep } from "./date.ts";
@@ -31,6 +32,8 @@ interface SiteState {
   lastChecked: string;
   /** url → lastmod string (or "seen" if no lastmod available) */
   seenUrls: Record<string, string>;
+  /** url → md5 hex of extracted page text (used to detect real content changes) */
+  contentHashes: Record<string, string>;
 }
 
 export interface WebState {
@@ -189,6 +192,11 @@ export function urlCategory(url: string): string {
   }
 }
 
+/** MD5 hex digest of a string — used to detect real content changes. */
+export function contentHash(text: string): string {
+  return crypto.createHash("md5").update(text).digest("hex");
+}
+
 /** Derive a human-readable title from the last URL path segment. */
 export function titleFromUrl(url: string): string {
   try {
@@ -249,8 +257,8 @@ const STATE_FILE = path.join("digests", "web-state.json");
 
 export function emptyState(): WebState {
   return {
-    anthropic: { lastChecked: "", seenUrls: {} },
-    openai: { lastChecked: "", seenUrls: {} },
+    anthropic: { lastChecked: "", seenUrls: {}, contentHashes: {} },
+    openai: { lastChecked: "", seenUrls: {}, contentHashes: {} },
   };
 }
 
@@ -277,6 +285,8 @@ export async function fetchSiteContent(
 ): Promise<WebFetchResult> {
   const cfg = SITE_CONFIGS[site];
   const siteState = state[site];
+  // Backward compat: old state files may lack contentHashes
+  const hashes = siteState.contentHashes ?? (siteState.contentHashes = {});
   const isFirstRun = Object.keys(siteState.seenUrls).length === 0;
 
   console.log(`  [web/${site}] Discovering URLs from sitemap...`);
@@ -328,11 +338,23 @@ export async function fetchSiteContent(
     for (const { loc, lastmod } of toFetch) {
       try {
         const html = await httpGet(loc);
+        const text = extractText(html);
+        const hash = contentHash(text);
+        const prev = siteState.seenUrls[loc];
+
+        // If URL was already seen and content hash matches, skip — the sitemap
+        // lastmod changed but the page content is identical (CMS/SEO refresh).
+        if (prev && hashes[loc] && hash === hashes[loc]) {
+          console.log(`  [web/${site}] Skipping unchanged content: ${loc}`);
+          continue;
+        }
+
+        hashes[loc] = hash;
         items.push({
           url: loc,
           title: extractTitle(html),
           lastmod: lastmod ?? "",
-          content: extractText(html),
+          content: text,
           site,
           category: urlCategory(loc),
         });

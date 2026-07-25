@@ -7,6 +7,7 @@ import {
   urlCategory,
   titleFromUrl,
   emptyState,
+  contentHash,
 } from "../web.ts";
 
 // ---------------------------------------------------------------------------
@@ -189,8 +190,8 @@ describe("emptyState", () => {
   it("returns valid empty state structure", () => {
     const state = emptyState();
     expect(state).toEqual({
-      anthropic: { lastChecked: "", seenUrls: {} },
-      openai: { lastChecked: "", seenUrls: {} },
+      anthropic: { lastChecked: "", seenUrls: {}, contentHashes: {} },
+      openai: { lastChecked: "", seenUrls: {}, contentHashes: {} },
     });
   });
 
@@ -200,5 +201,28 @@ describe("emptyState", () => {
     expect(a).not.toBe(b);
     a.anthropic.lastChecked = "modified";
     expect(b.anthropic.lastChecked).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// contentHash
+// ---------------------------------------------------------------------------
+
+describe("contentHash", () => {
+  it("returns a 32-char hex string", () => {
+    const h = contentHash("hello world");
+    expect(h).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it("returns the same hash for the same input", () => {
+    expect(contentHash("abc")).toBe(contentHash("abc"));
+  });
+
+  it("returns different hashes for different inputs", () => {
+    expect(contentHash("abc")).not.toBe(contentHash("def"));
+  });
+
+  it("returns different hash for empty vs non-empty", () => {
+    expect(contentHash("")).not.toBe(contentHash("x"));
   });
 });
