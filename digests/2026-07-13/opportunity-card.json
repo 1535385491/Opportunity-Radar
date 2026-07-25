@@ -1,0 +1,33 @@
+{
+  "zh": {
+    "summary": "Claude Code等AI编程工具执行前需消耗高达33k token，开发者正急寻低成本替代方案。",
+    "signals": [
+      {
+        "title": "AI助手Token成本优化",
+        "description": "这是什么：对Claude Code、OpenCode等工具进行性能分析，量化其“隐性”token消耗（如33k vs 7k）的技术文章/工具。为什么有商业潜力：直接戳中开发者成本控制痛点，企业级用户对成本敏感，有明确的优化和审计需求。",
+        "report": "ai-hn"
+      },
+      {
+        "title": "企业级AI代理平台",
+        "description": "这是什么：类似OpenClaw这样，提供多模型支持、稳定运行、支持云工作流（如PR #105865）的开源AI代理框架。为什么有商业潜力：企业数字化转型需要可靠、可扩展的AI工作流，平台可以提供托管、定制化服务。",
+        "report": "ai-agents"
+      },
+      {
+        "title": "即用型AI应用模板库",
+        "description": "这是什么：类似`awesome-llm-apps`（单日增408星）的精选集，提供可直接运行的AI代理和RAG应用代码。为什么有商业潜力：降低了开发者构建AI应用的门槛，可以围绕其构建付费的进阶教程、企业级模板和咨询服务。",
+        "report": "ai-trending"
+      },
+      {
+        "title": "AI跨会话记忆中间件",
+        "description": "这是什么：为AI助手（如Claude Code）提供持久化记忆能力的工具（如Adaptive Recall），解决“无状态”问题。为什么有商业潜力：记忆是AI代理实用化的关键瓶颈，该技术能显著提升用户体验和工具粘性，可作为核心服务或API提供。",
+        "report": "ai-hn"
+      },
+      {
+        "title": "垂直领域优化模型",
+        "description": "这是什么：在特定任务（如OCR、代码安全审查）上性能超越通用大模型的专有模型（如百度Unlimited-OCR，下载量143万）。为什么有商业潜力：在垂直领域（法律、医疗、金融）的精度和效率至关重要，可打造针对性SaaS服务或解决方案。",
+        "report": "ai-hf"
+      }
+    ]
+  },
+  "en": {}
+}

@@ -1,0 +1,28 @@
+{
+  "zh": {
+    "summary": "airllm 实现单张 4GB GPU 运行 70B 参数模型，今日 GitHub 新增 358 星，推动大模型低成本部署。",
+    "signals": [
+      {
+        "title": "低硬件大模型推理框架",
+        "description": "airllm 项目使 70B 参数模型在 4GB GPU 上运行，大幅降低硬件门槛，适合边缘计算和开发者工具化，能通过提供优化服务或集成硬件解决方案赚钱。",
+        "report": "ai-trending"
+      },
+      {
+        "title": "高性能 AI 编码工具升级",
+        "description": "Claude Code 采用 Rust 版 Bun 提升性能，Hacker News 热度 414 分，反映开发者对高效编码工具的强需求，能通过企业订阅或定制开发盈利。",
+        "report": "ai-hn"
+      },
+      {
+        "title": "企业级 AI 代理框架",
+        "description": "OpenClaw 项目今日处理 500 个 PR，聚焦安全和跨平台支持，适合企业部署自动化任务，能通过提供托管服务或安全增强方案赚钱。",
+        "report": "ai-agents"
+      },
+      {
+        "title": "开源多模态模型应用",
+        "description": "GLM-5.2 等模型在 Hugging Face 热度高，驱动本地多模态应用开发，能通过构建行业解决方案如 OCR 或视频分析盈利。",
+        "report": "ai-hf"
+      }
+    ]
+  },
+  "en": {}
+}

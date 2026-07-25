@@ -1,0 +1,61 @@
+{
+  "zh": {
+    "ai-cli": [
+      "OpenAI Codex发布v0.146.0-alpha版本",
+      "Claude Code社区热度极高，多Issue评论超30",
+      "OpenCode模型发现Issue获187赞",
+      "GitHub Copilot CLI发布v1.0.74版本",
+      "MCP协议成为AI CLI生态事实标准",
+      "Windows平台适配成关键痛点"
+    ],
+    "ai-agents": [
+      "OpenClaw单日处理298个Issues与500个PRs",
+      "修复子代理完成死锁的PR #113190",
+      "修复认证迁移数据丢失的PR #97881",
+      "防止消息静默丢失的PR #89039",
+      "修复定时任务工具权限的PR #112661",
+      "社区热点：子代理结果静默丢失"
+    ],
+    "ai-trending": [
+      "OmniRoute单日暴涨1929星，成AI网关",
+      "browser-use获10.6万星，网页操作Agent",
+      "AutoGPT自主智能体先驱，持续迭代",
+      "hermes-agent获21.9万星，社区期待",
+      "graphify将RAG与知识图谱深度结合",
+      "AI在金融、设计等垂直领域应用深入"
+    ],
+    "ai-web": [
+      "发布软件工程新模型Claude Opus 4.7",
+      "推出Creative Work连接器，集成Adobe等",
+      "设立2亿美元经济未来研究基金",
+      "OpenAI今日有4项新内容索引",
+      "部分OpenAI内容正文缺失待观察",
+      "政策介入AI经济影响与治理"
+    ],
+    "ai-hn": [
+      "Echo用开源模型达Fable级，成本仅1/3",
+      "OneCLI：开源凭证网关解决Agent痛点",
+      "Claude-thermos保持Claude会话活跃",
+      "Screenpipe：录工作流创建个人Agent",
+      "社区批判OpenAI与Anthropic联合反制",
+      "GLM-4.5-Air(110B)在消费机运行探索"
+    ],
+    "ai-arxiv": [
+      "论文揭示LLM过度使用自我修正修辞",
+      "研究思维链模型推理收敛与不收敛",
+      "论文警告AI助手过度帮助损害自主性",
+      "首次评估多模态LLM遗忘的公平性",
+      "智能体上下文管理被重定义为架构问题",
+      "多智能体中介可能加剧LLM不安全性"
+    ],
+    "ai-hf": [
+      "GLM-5.2登顶，近4400赞59.6万下载",
+      "百度Unlimited-OCR需求旺盛，241万下载",
+      "Google gemma-4-31B-it成视觉模型标杆",
+      "Qwen3-TTS高保真定制语音合成",
+      "Kimi-K2.7-Code专注代码视觉语言模型",
+      "社区大量微调Qwen与Bonsai系列模型"
+    ]
+  },
+  "en": {}
+}

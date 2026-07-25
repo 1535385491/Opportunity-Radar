@@ -1,0 +1,28 @@
+{
+  "zh": {
+    "summary": "Anthropic发布Claude Opus 4.7并推出连接器生态，直接集成Adobe等专业工具，标志着AI从通用助手向专业工作流深度嵌入。",
+    "signals": [
+      {
+        "title": "OmniRoute：统一AI网关",
+        "description": "OmniRoute作为AI网关，单日获1929星，通过单一端点接入290+模型，解决了开发者在多模型集成中的核心痛点。有潜力做成SaaS服务。",
+        "report": "ai-trending"
+      },
+      {
+        "title": "开源模型成本套利",
+        "description": "Echo项目用开源模型以1/3成本达到顶级闭源模型（如Fable）的性能，证明了利用开源模型构建低成本推理服务的商业路径。",
+        "report": "ai-hn"
+      },
+      {
+        "title": "垂直工作流集成",
+        "description": "Anthropic为Claude推出“连接器”，深度集成Adobe、Ableton等创意工具，将AI嵌入专业工作流。这是争夺高价值垂直用户的明确信号。",
+        "report": "ai-web"
+      },
+      {
+        "title": "企业级RAG方案缺口",
+        "description": "社区（Dev.to）大量讨论RAG系统在生产环境中的架构缺陷和隐形成本，表明市场需要更可靠、易维护的企业级AI搜索解决方案。",
+        "report": "ai-community"
+      }
+    ]
+  },
+  "en": {}
+}
