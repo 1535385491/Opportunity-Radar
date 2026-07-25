@@ -38,6 +38,9 @@ export const CLI_REPORT = {
   skillsSource: t("数据来源", "Source"),
   comparison: t("横向对比", "Cross-Tool Comparison"),
   detail: t("各工具详细报告", "Per-Tool Reports"),
+  overview: t("今日概览", "Today's Overview"),
+  primaryTools: t("主力工具详情", "Primary Tool Details"),
+  secondaryTools: t("其他工具动态", "Other Tool Updates"),
 } as const;
 
 export const OPENCLAW_REPORT = {
