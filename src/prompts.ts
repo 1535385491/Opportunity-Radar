@@ -442,16 +442,14 @@ ${sections}
 
 ---
 
-Generate a cross-tool comparison report in English with these sections:
+Generate a cross-tool signals report in English with these sections:
 
-1. **Ecosystem Overview** - 3-5 sentences on the overall AI CLI tools development landscape
-2. **Activity Comparison** - Table comparing Issues count, PR count, Release status for each tool today
-3. **Shared Feature Directions** - Requirements appearing across multiple tool communities (note which tools, specific needs)
-4. **Differentiation Analysis** - Differences in feature focus, target users, and technical approach
-5. **Community Momentum & Maturity** - Which tools have more active communities, which are rapidly iterating
-6. **Trend Signals** - Industry trends from community feedback, reference value for developers
+1. **Shared Signals** - Requirements or issues appearing across multiple tool communities (note which tools, specific needs). Omit if no clear cross-tool patterns exist.
+2. **Emerging Technical Directions** - Frontier tech signals from community feedback, must be related to how developers actually use the tools (backed by concrete dynamics, not pure speculation).
 
-Style: concise and professional, data-backed, suited for technical decision-makers and developers.
+Filtering rules: exclude company strategy/business news, community governance/disputes, pure UI details, project management/CI, premature RFCs.
+
+Style: concise and professional, data-backed, suited for technical developers.
 `;
   }
 
@@ -461,16 +459,14 @@ ${sections}
 
 ---
 
-请基于上述各工具的动态，生成一份横向对比分析报告，包含以下部分：
+请基于上述各工具的动态，提炼跨工具共同关注的功能方向，包含以下部分：
 
-1. **生态全景** - 用3-5句话概括当前 AI CLI 工具整体发展态势
-2. **各工具活跃度对比** - 以表格形式汇总各工具今日的 Issues 数、PR 数、Release 情况
-3. **共同关注的功能方向** - 多个工具社区都在关注的需求（说明哪些工具、具体诉求）
-4. **差异化定位分析** - 各工具在功能侧重、目标用户、技术路线上的差异
-5. **社区热度与成熟度** - 哪些工具社区更活跃，哪些处于快速迭代阶段
-6. **值得关注的趋势信号** - 从社区反馈中提炼出的行业趋势，对开发者有何参考价值
+1. **跨工具共同信号** - 多个工具社区同时出现的需求或问题（注明涉及哪些工具、具体诉求）。如果没有明显的共同信号，可以省略。
+2. **新兴技术方向** - 从社区反馈中提炼的前沿技术信号，必须与开发者实际使用方式相关（有具体动态支撑，不是纯展望）
 
-语言要求：简洁专业，有数据支撑，适合技术决策者和开发者阅读。
+过滤规则：不要包含公司战略/商业新闻、社区治理/争议、纯 UI 细节、项目管理/CI 流程、远期 RFC。
+
+语言要求：简洁专业，有数据支撑，适合技术开发者阅读。
 `;
 }
 
