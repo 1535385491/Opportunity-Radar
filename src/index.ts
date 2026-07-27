@@ -35,6 +35,8 @@ import {
   saveReportState,
   calculateSince,
   updateStateAfterSuccess,
+  checkSameDay,
+  updateSourceStates,
 } from "./report-state.ts";
 import {
   extractRepoCandidates,
@@ -46,7 +48,7 @@ import {
   extractArxivCandidates,
   extractCommunityCandidates,
   mergeCandidates,
-  selectFinalItems,
+  buildBalancedPool,
   generatePersonalReport,
   extractTrendingSnapshot,
   extractHfSnapshot,
@@ -192,7 +194,7 @@ async function fetchAllData(
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2: Extract candidates from all sources
+// Phase 2: Extract candidates and build balanced pool
 // ---------------------------------------------------------------------------
 
 function extractAllCandidates(
@@ -224,7 +226,7 @@ function extractAllCandidates(
   candidates.push(...extractRepoCandidates(skillsFetch, PERSONAL_CONFIG, 3));
 
   // Data sources
-  candidates.push(...extractWebCandidates(webResults, 5));
+  candidates.push(...extractWebCandidates(webResults, 8));
   candidates.push(...extractTrendingCandidates(trendingData, 5));
   candidates.push(...extractHnCandidates(hnData, 5));
   candidates.push(...extractPhCandidates(phData, 3));
@@ -233,6 +235,43 @@ function extractAllCandidates(
   candidates.push(...extractCommunityCandidates(devtoData, lobstersData, 3));
 
   return candidates;
+}
+
+/** Build source success map for per-source state tracking. */
+function buildSourceResults(
+  fetched: RepoFetch[],
+  webResults: WebFetchResult[],
+  trendingData: TrendingData,
+  hnData: HnData,
+  phData: PhData,
+  arxivData: ArxivData,
+  hfData: HfData,
+  devtoData: DevtoData,
+  lobstersData: LobstersData,
+): Record<string, { success: boolean; error?: string }> {
+  const results: Record<string, { success: boolean; error?: string }> = {};
+
+  // GitHub repos: success if we got any data (issues/prs/releases)
+  for (const fetch of fetched) {
+    const hasData = fetch.issues.length > 0 || fetch.prs.length > 0 || fetch.releases.length > 0;
+    results[`github-${fetch.cfg.id}`] = { success: hasData };
+  }
+
+  // Web sources
+  for (const wr of webResults) {
+    results[`web-${wr.site}`] = { success: wr.newItems.length > 0 || wr.totalDiscovered > 0 };
+  }
+
+  // Other sources
+  results["trending"] = { success: trendingData.trendingFetchSuccess };
+  results["hn"] = { success: hnData.fetchSuccess };
+  results["ph"] = { success: phData.fetchSuccess };
+  results["arxiv"] = { success: arxivData.fetchSuccess };
+  results["hf"] = { success: hfData.fetchSuccess };
+  results["devto"] = { success: devtoData.fetchSuccess };
+  results["lobsters"] = { success: lobstersData.fetchSuccess };
+
+  return results;
 }
 
 // ---------------------------------------------------------------------------
@@ -275,7 +314,7 @@ function generateOpportunityFromJson(
 // Main
 // ---------------------------------------------------------------------------
 
-async function main(): Promise<void> {
+async function main(): Promise<string> {
   requireEnv("GITHUB_TOKEN");
 
   const now = new Date();
@@ -294,6 +333,12 @@ async function main(): Promise<void> {
   console.log(`  Previous report: ${prevState?.lastReportDate ?? "none"}`);
   console.log(`  Collection window since: ${since}`);
 
+  // Same-day re-run detection
+  if (checkSameDay(prevState, dateStr) && process.env["DRY_RUN"] !== "true") {
+    console.log(`  Report for ${dateStr} already exists — skipping.`);
+    return "skipped-same-day";
+  }
+
   // 2. Fetch all data
   const webState = loadWebState();
   const {
@@ -309,7 +354,7 @@ async function main(): Promise<void> {
     lobstersData,
   } = await fetchAllData(since, webState, prevTrending, prevHf);
 
-  // 3. Extract candidates from all sources
+  // 3. Extract candidates and build balanced pool
   console.log("  Extracting candidates...");
   const allCandidates = extractAllCandidates(
     fetched,
@@ -323,17 +368,20 @@ async function main(): Promise<void> {
     devtoData,
     lobstersData,
   );
-  console.log(`  Total candidates: ${allCandidates.length}`);
+  console.log(`  Total raw candidates: ${allCandidates.length}`);
 
-  // 4. Merge and dedup
-  const merged = mergeCandidates(allCandidates);
-  const finalCandidates = selectFinalItems(merged, PERSONAL_CONFIG.detailLimit);
-  console.log(`  After merge/dedup: ${finalCandidates.length} candidates`);
+  // Build balanced pool — prevents GitHub from starving other sources
+  const balancedPool = buildBalancedPool(allCandidates, PERSONAL_CONFIG);
+  console.log(`  Balanced pool: ${balancedPool.length} candidates`);
 
-  // 5. Generate personal report via LLM
+  // 4. Deterministic merge (URL dedup)
+  const merged = mergeCandidates(balancedPool);
+  console.log(`  After merge/dedup: ${merged.length} candidates`);
+
+  // 5. Generate personal report via two-stage LLM
   console.log("  Generating personal report...");
   const reportResult = await generatePersonalReport(
-    finalCandidates,
+    merged,
     PERSONAL_CONFIG,
     prevState?.lastSuccessfulAt ?? since,
     now.toISOString(),
@@ -343,24 +391,40 @@ async function main(): Promise<void> {
 
   if (!reportResult) {
     console.error("  Personal report generation failed — aborting without updating state.");
-    return;
+    process.exitCode = 1;
+    return "failed";
   }
 
-  // 6. Update report state (only after successful generation)
+  // 6. Update report state with per-source tracking
+  const sourceResults = buildSourceResults(
+    fetched,
+    webResults,
+    trendingData,
+    hnData,
+    phData,
+    arxivData,
+    hfData,
+    devtoData,
+    lobstersData,
+  );
   const newState = updateStateAfterSuccess(prevState, dateStr, now);
-  // Persist snapshot markers for trending and HF
-  newState.snapshotMarkers = {
-    ...prevState?.snapshotMarkers,
-    trending: extractTrendingSnapshot(trendingData),
-    hf: extractHfSnapshot(hfData),
-  };
+  newState.sources = updateSourceStates(prevState, sourceResults, now);
+  // Persist snapshot markers — only update if fetch succeeded, preserve old on failure
+  const newSnapshots: Record<string, unknown> = { ...prevState?.snapshotMarkers };
+  if (trendingData.trendingFetchSuccess) {
+    newSnapshots["trending"] = extractTrendingSnapshot(trendingData);
+  }
+  if (hfData.fetchSuccess) {
+    newSnapshots["hf"] = extractHfSnapshot(hfData);
+  }
+  newState.snapshotMarkers = newSnapshots;
   saveReportState(newState);
   console.log(`  Updated report state: lastSuccessfulAt=${newState.lastSuccessfulAt}`);
 
   // 7. Save web state
   saveWebState(webState);
 
-  // 8. Generate highlights + opportunity card from JSON (no extra LLM calls)
+  // 8. Generate highlights + opportunity card from JSON (backward compat)
   const highlights = generateHighlightsFromJson(reportResult.json);
   const highlightsPath = saveFile(JSON.stringify(highlights, null, 2), dateStr, "highlights.json");
   console.log(`  Saved ${highlightsPath}`);
@@ -376,10 +440,19 @@ async function main(): Promise<void> {
     console.log(`  Created issue: ${issueUrl}`);
   }
 
+  const isNoUpdate = reportResult.json.topics.length === 0;
   console.log("Done!");
+  return isNoUpdate ? "no-important-updates" : "generated";
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main()
+  .then((status) => {
+    console.log(`[status] ${status}`);
+    if (status === "failed") {
+      process.exit(1);
+    }
+  })
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

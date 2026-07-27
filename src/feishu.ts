@@ -17,8 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { NOTIFY_LABELS } from "./i18n.ts";
-import type { Highlights } from "./notify.ts";
-import type { OpportunityCard } from "./prompts-data.ts";
+import type { PersonalReportJson } from "./personal-report.ts";
 
 const PAGES_URL_DEFAULT = "https://duanyytop.github.io/agents-radar";
 
@@ -194,13 +193,12 @@ interface CardContext {
   date: string;
   reports: string[];
   pagesUrl: string;
-  highlights: Highlights | null;
-  opportunity: OpportunityCard | null;
+  personalDigest: PersonalReportJson | null;
   type: "daily" | "weekly" | "monthly";
 }
 
 function buildCard(ctx: CardContext): unknown {
-  const { date, reports, pagesUrl, highlights, opportunity, type } = ctx;
+  const { date, reports, pagesUrl, personalDigest, type } = ctx;
   const baseReports = reports.filter((r) => !r.endsWith("-en"));
 
   const icon = type === "monthly" ? "📆" : type === "weekly" ? "📅" : "📡";
@@ -209,76 +207,34 @@ function buildCard(ctx: CardContext): unknown {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const elements: any[] = [];
 
-  // --- Opportunity section (narrative style) ---
-  if (opportunity?.summary || opportunity?.signals?.length) {
-    if (opportunity.summary) {
-      elements.push({
-        tag: "markdown",
-        content: `**🔥 今日一句话**\n\n${escapeMarkdown(opportunity.summary)}`,
-      });
-    }
-
-    if (opportunity.signals?.length) {
-      const signalLines = opportunity.signals.map((s, i) => {
-        const reportUrl = s.report ? `${pagesUrl}/#${date}/${s.report}` : "";
-        const link = reportUrl ? `  [→ 看报告](${reportUrl})` : "";
-        return `${i + 1}. **${escapeMarkdown(s.title)}**\n${escapeMarkdown(s.description)}${link}`;
-      });
-      elements.push({ tag: "hr" });
-      elements.push({
-        tag: "markdown",
-        content: "**⚡ 值得关注的机会**\n\n" + signalLines.join("\n\n"),
-      });
-    }
-  } else {
-    // Fallback: use highlights if opportunity card not available
-    const zhHighlights = highlights?.zh ?? {};
-    const highlightLines: string[] = [];
-    const priorityOrder = [
-      "ai-cli",
-      "ai-agents",
-      "ai-trending",
-      "ai-hn",
-      "ai-ph",
-      "ai-arxiv",
-      "ai-hf",
-      "ai-community",
-    ];
-    const ordered =
-      type === "weekly"
-        ? ["ai-weekly", ...priorityOrder]
-        : type === "monthly"
-          ? ["ai-monthly", ...priorityOrder]
-          : priorityOrder;
-
-    for (const reportId of ordered) {
-      if (!baseReports.includes(reportId)) continue;
-      const items = zhHighlights[reportId];
-      if (!items?.length) continue;
-      const label = NOTIFY_LABELS[reportId]?.zh ?? reportId;
-      highlightLines.push(`**${label}**`);
-      for (const h of items.slice(0, 2)) {
-        highlightLines.push(`• ${escapeMarkdown(h)}`);
-      }
-      highlightLines.push("");
-    }
-
-    if (highlightLines.length > 0) {
-      elements.push({
-        tag: "markdown",
-        content: "**📌 今日重点**\n\n" + highlightLines.join("\n"),
-      });
-    }
+  // --- Overview from personal-digest.json ---
+  if (personalDigest?.overview?.length) {
+    const overviewLines = personalDigest.overview.map(
+      (o, i) => `${i + 1}. **${escapeMarkdown(o.topic)}**：${escapeMarkdown(o.summary)}`,
+    );
+    elements.push({
+      tag: "markdown",
+      content: `**📋 五分钟概览**\n\n${overviewLines.join("\n")}`,
+    });
   }
 
-  // --- Report links section ---
+  // --- Tool status from personal-digest.json ---
+  if (personalDigest?.toolStatus && Object.keys(personalDigest.toolStatus).length > 0) {
+    const statusLines = Object.entries(personalDigest.toolStatus).map(
+      ([tool, status]) => `• **${escapeMarkdown(tool)}**：${escapeMarkdown(status)}`,
+    );
+    elements.push({ tag: "hr" });
+    elements.push({
+      tag: "markdown",
+      content: `**🔧 主力工具状态**\n\n${statusLines.join("\n")}`,
+    });
+  }
+
+  // --- Single report entry link ---
   elements.push({ tag: "hr" });
 
   const linkLines: string[] = [];
-  const dailyReports = baseReports.filter((r) => !r.includes("weekly") && !r.includes("monthly"));
-  const rollupReports = baseReports.filter((r) => r.includes("weekly") || r.includes("monthly"));
-
-  for (const r of [...dailyReports, ...rollupReports]) {
+  for (const r of baseReports) {
     const zhLabel = NOTIFY_LABELS[r]?.zh ?? r;
     const zhUrl = `${pagesUrl}/#${date}/${r}`;
     const enKey = `${r}-en`;
@@ -293,7 +249,7 @@ function buildCard(ctx: CardContext): unknown {
 
   elements.push({
     tag: "markdown",
-    content: "**📎 完整报告**\n\n" + linkLines.join("\n"),
+    content: "**📎 查看完整报告**\n\n" + linkLines.join("\n"),
   });
 
   elements.push({ tag: "hr" });
@@ -319,9 +275,8 @@ export function buildFeishuMessage(
   date: string,
   reports: string[],
   pagesUrl?: string,
-  highlights?: Highlights | null,
+  personalDigest?: PersonalReportJson | null,
 ): string {
-  // For backward compatibility: returns a markdown string (used by tests)
   const PAGES_URL = (pagesUrl ?? process.env["PAGES_URL"] ?? PAGES_URL_DEFAULT).replace(/\/$/, "");
   const baseReports = reports.filter((r) => !r.endsWith("-en"));
   const isWeekly = baseReports.includes("ai-weekly");
@@ -331,12 +286,29 @@ export function buildFeishuMessage(
   const suffix = isMonthly ? " 月报" : isWeekly ? " 周报" : "";
   const lines: string[] = [`${icon} **agents-radar${suffix} · ${date}**`];
 
+  // Overview from personal-digest
+  if (personalDigest?.overview?.length) {
+    lines.push("");
+    lines.push("**📋 五分钟概览**");
+    for (const [i, o] of personalDigest.overview.entries()) {
+      lines.push(`${i + 1}. **${o.topic}**：${o.summary}`);
+    }
+  }
+
+  // Tool status from personal-digest
+  if (personalDigest?.toolStatus && Object.keys(personalDigest.toolStatus).length > 0) {
+    lines.push("");
+    lines.push("**🔧 主力工具状态**");
+    for (const [tool, status] of Object.entries(personalDigest.toolStatus)) {
+      lines.push(`• **${tool}**：${status}`);
+    }
+  }
+
+  // Report links
   const ordered = [
     ...baseReports.filter((r) => !r.includes("weekly") && !r.includes("monthly")),
     ...baseReports.filter((r) => r.includes("weekly") || r.includes("monthly")),
   ];
-
-  const zhHighlights = highlights?.zh ?? {};
 
   for (const r of ordered) {
     const zhLabel = NOTIFY_LABELS[r]?.zh ?? r;
@@ -350,13 +322,6 @@ export function buildFeishuMessage(
       lines.push(`• [${zhLabel}](${zhUrl})  ·  [${enLabel}](${enUrl})`);
     } else {
       lines.push(`• [${zhLabel}](${zhUrl})`);
-    }
-
-    const items = zhHighlights[r];
-    if (items?.length) {
-      for (const h of items) {
-        lines.push(`  ◦ ${h}`);
-      }
     }
   }
 
@@ -393,33 +358,14 @@ async function main(): Promise<void> {
   }
   const { date, reports } = latest;
 
-  // Load highlights if available
-  let highlights: Highlights | null = null;
-  const highlightsPath = path.join("digests", date, "highlights.json");
-  if (fs.existsSync(highlightsPath)) {
+  // Load personal-digest.json (the single source of truth for Feishu)
+  let personalDigest: PersonalReportJson | null = null;
+  const digestPath = path.join("digests", date, "personal-digest.json");
+  if (fs.existsSync(digestPath)) {
     try {
-      const raw = JSON.parse(fs.readFileSync(highlightsPath, "utf-8")) as Record<string, unknown>;
-      // Support both old bilingual format {zh: ..., en: ...} and new flat format
-      if (raw?.zh || raw?.en) {
-        highlights = raw as unknown as Highlights;
-      } else {
-        highlights = { zh: raw as Record<string, string[]>, en: {} };
-      }
+      personalDigest = JSON.parse(fs.readFileSync(digestPath, "utf-8")) as PersonalReportJson;
     } catch {
-      console.log("[feishu] Failed to parse highlights.json — sending without highlights.");
-    }
-  }
-
-  // Load opportunity card if available (preferred over highlights)
-  let opportunity: OpportunityCard | null = null;
-  const oppPath = path.join("digests", date, "opportunity-card.json");
-  if (fs.existsSync(oppPath)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(oppPath, "utf-8"));
-      // Support both old bilingual format {zh: ..., en: ...} and new flat format
-      opportunity = raw?.summary !== undefined ? raw as OpportunityCard : (raw?.zh ?? null);
-    } catch {
-      console.log("[feishu] Failed to parse opportunity-card.json — falling back to highlights.");
+      console.log("[feishu] Failed to parse personal-digest.json — sending without content.");
     }
   }
 
@@ -431,7 +377,7 @@ async function main(): Promise<void> {
 
   const PAGES_URL = (process.env["PAGES_URL"] ?? PAGES_URL_DEFAULT).replace(/\/$/, "");
 
-  const card = buildCard({ date, reports, pagesUrl: PAGES_URL, highlights, opportunity, type });
+  const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
 
   // Dedup check: skip if already sent for this date unless FORCE_SEND=true
   const sendKey = makeSendKey(type, date);

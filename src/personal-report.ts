@@ -1,9 +1,10 @@
 /**
- * Personal report generation: candidate extraction, cross-source merge,
- * filtering, LLM-based topic organization, and Markdown rendering.
+ * Personal report generation: candidate extraction, balanced pool building,
+ * cross-source merge, two-stage LLM filtering/generation, validation,
+ * and Markdown rendering.
  *
- * This module replaces the per-source LLM report generation with a unified
- * pipeline: raw data → candidates → merge → single LLM call → JSON → Markdown.
+ * Pipeline: raw data → candidates → balanced pool → LLM filter → LLM report
+ *           → validate → JSON + Markdown
  */
 
 import type { RepoConfig, RepoFetch, GitHubItem, GitHubRelease } from "./github.ts";
@@ -69,25 +70,93 @@ export interface MergedCandidate extends CandidateItem {
   additionalSources: string[];
 }
 
+export type UpdateKind = "new" | "updated" | "snapshot-change";
+
+export interface FilterResultItem {
+  /** Final event title after merge. */
+  title: string;
+  /** Candidate IDs kept for this event. */
+  keepIds: string[];
+  /** Candidate IDs merged into this event. */
+  mergedIds: string[];
+  /** Topic assignment. */
+  topic: string;
+  /** Why this event is relevant. */
+  relevance: string;
+  /** Confidence: high / medium / low. */
+  confidence: "high" | "medium" | "low";
+  /** Brief reason for inclusion. */
+  reason: string;
+  /** Whether the project needs background context. */
+  needsContext: boolean;
+}
+
+export interface FilterResult {
+  kept: FilterResultItem[];
+  excluded: Array<{ id: string; reason: string }>;
+}
+
 export interface PersonalReportJson {
   generatedAt: string;
   coverageFrom: string;
   coverageTo: string;
-  overview: Array<{ topic: string; summary: string }>;
+  overview: Array<{ id: string; topic: string; summary: string }>;
   toolStatus: Record<string, string>;
   topics: Array<{
     name: string;
     items: Array<{
+      id: string;
+      candidateIds: string[];
       title: string;
+      eventTime: string;
+      updateKind: UpdateKind;
       what: string;
       why: string;
       impact: string;
       action?: string;
       status: "已确认" | "社区信号";
+      projectContext?: string;
       sources: Array<{ name: string; url: string }>;
     }>;
   }>;
 }
+
+export type ValidateErrorCode =
+  | "OVERVIEW_OVER_LIMIT"
+  | "DETAILS_OVER_LIMIT"
+  | "MISSING_ITEM_ID"
+  | "MISSING_EVENT_TIME"
+  | "INVALID_STATUS"
+  | "INVALID_UPDATE_KIND"
+  | "OVERVIEW_REF_MISSING"
+  | "TOOL_STATUS_MISSING_TOOL"
+  | "FABRICATED_URL"
+  | "MISSING_SOURCE_URL"
+  | "MISSING_CANDIDATE_IDS";
+
+export interface ValidateResult {
+  ok: boolean;
+  errors: Array<{ code: ValidateErrorCode; message: string }>;
+}
+
+// ---------------------------------------------------------------------------
+// Balanced pool constants
+// ---------------------------------------------------------------------------
+
+export const CATEGORY_LIMITS = {
+  codex: 8,
+  claudeCode: 8,
+  otherCli: 6,
+  webOpenai: 4,
+  webAnthropic: 4,
+  hn: 5,
+  arxiv: 3,
+  hf: 3,
+  ph: 3,
+  trending: 3,
+  community: 3,
+  skills: 3,
+} as const;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -102,6 +171,18 @@ function sortByTime(items: CandidateItem[]): CandidateItem[] {
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return text.slice(0, max - 3) + "...";
+}
+
+/** Round-robin interleave arrays. */
+function interleave(arrays: CandidateItem[][]): CandidateItem[] {
+  const result: CandidateItem[] = [];
+  const maxLen = Math.max(...arrays.map((a) => a.length), 0);
+  for (let i = 0; i < maxLen; i++) {
+    for (const arr of arrays) {
+      if (i < arr.length) result.push(arr[i]!);
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -373,6 +454,68 @@ export function extractCommunityCandidates(
 }
 
 // ---------------------------------------------------------------------------
+// Balanced Pool Builder — prevents source starvation
+// ---------------------------------------------------------------------------
+
+/** Categorize a candidate's source for pool balancing. */
+function categorizeSource(c: CandidateItem, primaryTools: string[]): string {
+  const src = c.sourceName.toLowerCase();
+  const subj = c.subject.toLowerCase();
+
+  if (src === "hacker news") return "hn";
+  if (src === "arxiv") return "arxiv";
+  if (src === "hugging face") return "hf";
+  if (src === "product hunt") return "ph";
+  if (src === "dev.to" || src === "lobste.rs") return "community";
+  if (src.includes("trending") || src.includes("search")) return "trending";
+  if (src.includes("anthropic") && src.includes("skills")) return "skills";
+
+  // Web sources
+  if (subj.includes("openai") || src.includes("openai")) return "webOpenai";
+  if (subj.includes("anthropic") || subj.includes("claude")) return "webAnthropic";
+
+  // GitHub repos — classify by primary tool
+  for (const tool of primaryTools) {
+    if (tool === "codex" && (subj.includes("codex") || subj.includes("openai codex"))) return "codex";
+    if (tool === "claude-code" && (subj.includes("claude code") || subj.includes("claude-code"))) return "claudeCode";
+  }
+
+  return "otherCli";
+}
+
+/**
+ * Build a balanced candidate pool with per-source category caps.
+ *
+ * Replaces the naive `slice(0, detailLimit)` that starved non-GitHub sources.
+ * Uses round-robin interleaving to ensure each source category gets representation.
+ */
+export function buildBalancedPool(
+  candidates: CandidateItem[],
+  config: PersonalReportConfig,
+  limits: Record<string, number> = CATEGORY_LIMITS as Record<string, number>,
+): CandidateItem[] {
+  // Group by category
+  const groups = new Map<string, CandidateItem[]>();
+  for (const c of candidates) {
+    const cat = categorizeSource(c, config.primaryTools);
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat)!.push(c);
+  }
+
+  // Sort each group by time and apply per-category caps
+  const cappedGroups: CandidateItem[][] = [];
+  for (const [cat, items] of groups) {
+    const sorted = sortByTime(items);
+    const limit = limits[cat] ?? 3;
+    cappedGroups.push(sorted.slice(0, limit));
+  }
+
+  // Interleave: take one from each group in round-robin order
+  // This ensures later-processed sources aren't starved
+  return interleave(cappedGroups);
+}
+
+// ---------------------------------------------------------------------------
 // Cross-source Merge (Task 6)
 // ---------------------------------------------------------------------------
 
@@ -439,15 +582,16 @@ export function selectFinalItems(
 }
 
 // ---------------------------------------------------------------------------
-// Report Generation (Task 7)
+// Stage 1: LLM Filter Prompt — candidate filtering and semantic merge
 // ---------------------------------------------------------------------------
 
-const PERSONAL_REPORT_TOKENS = 8192;
+const FILTER_TOKENS = 6144;
 
 /**
- * Builds the LLM prompt for topic-based organization.
+ * Builds the LLM prompt for Stage 1: filtering, relevance judgment,
+ * and cross-source semantic merging.
  */
-export function buildPersonalReportPrompt(
+export function buildFilterPrompt(
   candidates: MergedCandidate[],
   config: PersonalReportConfig,
   coverageFrom: string,
@@ -467,7 +611,7 @@ export function buildPersonalReportPrompt(
     )
     .join("\n\n");
 
-  return `你是一位 AI 技术领域的个人情报分析师。你的任务是将以下候选信息整理成一份结构化的中文个人简报。
+  return `你是一位 AI 技术领域的个人情报筛选分析师。你的任务是从以下候选信息中筛选出值得进入最终报告的事件，并进行跨来源语义合并。
 
 ## 用户画像
 - 主力工具：${config.primaryTools.join("、")}
@@ -487,47 +631,45 @@ ${candidateBlock}
 请输出严格的 JSON（不要包含 markdown 代码块标记），结构如下：
 
 {
-  "overview": [
-    { "topic": "主题名", "summary": "一句话结论" }
-  ],
-  "toolStatus": {
-    "Codex": "一句话状态或'本期无重要更新'",
-    "Claude Code": "一句话状态或'本期无重要更新'"
-  },
-  "topics": [
+  "kept": [
     {
-      "name": "主题名（根据数据动态生成）",
-      "items": [
-        {
-          "title": "条目标题",
-          "what": "发生了什么",
-          "why": "为什么值得关注",
-          "impact": "对用户的影响",
-          "action": "建议行动（仅在确有必要时提供，否则省略此字段）",
-          "status": "已确认 或 社区信号",
-          "sources": [{ "name": "来源名", "url": "来源URL" }]
-        }
-      ]
+      "title": "事件标题",
+      "keepIds": [1, 5],
+      "mergedIds": [8],
+      "topic": "主题名",
+      "relevance": "与用户的相关维度说明",
+      "confidence": "high 或 medium 或 low",
+      "reason": "保留理由",
+      "needsContext": false
     }
+  ],
+  "excluded": [
+    { "id": 3, "reason": "排除理由" }
   ]
 }
 
-## 规则
-1. overview 最多 ${config.overviewLimit} 条，每条一句话，是正文的索引而非复制。
-2. 正文 topics 中的 items 总数不超过 ${config.detailLimit} 条。
-3. 按主题组织，不按来源或项目组织。主题根据当天数据动态生成。
-4. 主力工具没有高价值更新时，toolStatus 中写"本期无重要更新"。
-5. 陌生项目必须说明"它是什么"和"为什么与你有关"。
-6. 社区来源但未经官方确认的内容标注 status 为"社区信号"。
-7. 商业机会只有在具体、可信、可行动时才在 impact 或 action 中提及。
-8. 禁止把普通版本发布、star 数量或讨论热度本身当作价值理由。
-9. 所有 sources 中的 URL 必须来自候选输入，禁止编造。
-10. 排除维度中的内容不要纳入报告。
-11. 纯版本号更新不值得单独列出，除非有实质功能变化。`;
+## 筛选规则
+
+1. 主力工具优先，但不保证入选。
+2. 普通版本号、star 数量和讨论热度本身不是价值理由。
+3. 模糊投诉和没有事实细节的 Issue 淘汰。
+4. 纯 UI、项目自身 CI、治理争议、市场定位、常规 Claw 动态淘汰。
+5. Slack 等用户不使用的场景，除非体现了可迁移到用户工作流的重大能力，否则淘汰。
+6. 同一发布在官网、GitHub、HN、社区出现时合并成一个事件，keepIds 保留所有相关候选编号。
+7. 不设置最低数量。宁缺毋滥。
+8. 最多保留 ${config.detailLimit} 个事件。
+9. 确信度为 low 且无事实支撑的条目应排除。
+10. 排除维度中的内容不要纳入。
+11. 模糊的"用量泄漏"或类似低证据投诉应排除。
+12. keepIds 中的编号必须来自输入候选列表。
+13. 需要背景说明的陌生项目设置 needsContext 为 true。`;
 }
 
 /**
- * Generates the personal report: LLM call → JSON → file save.
+ * Generates the personal report: two-stage LLM call → JSON → validate → file save.
+ *
+ * Stage 1: Filter + semantic merge
+ * Stage 2: Generate structured report from filtered events
  */
 export async function generatePersonalReport(
   candidates: MergedCandidate[],
@@ -538,16 +680,37 @@ export async function generatePersonalReport(
   lang: Lang,
 ): Promise<{ json: PersonalReportJson; markdown: string } | null> {
   if (candidates.length === 0) {
-    console.log("  [personal] No candidates — skipping report generation.");
+    console.log("  [personal] No candidates — generating no-update report.");
+    return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
+  }
+
+  // Stage 1: Filter and merge
+  console.log("  [personal] Stage 1: filtering and merging candidates...");
+  const filterPrompt = buildFilterPrompt(candidates, config, coverageFrom, coverageTo);
+  const filterRaw = await callLlm(filterPrompt, FILTER_TOKENS);
+  const filterResult = parseLlmJson<FilterResult>(filterRaw);
+
+  if (!filterResult || !Array.isArray(filterResult.kept)) {
+    console.error("  [personal] Stage 1 filter failed — aborting.");
     return null;
   }
 
-  const prompt = buildPersonalReportPrompt(candidates, config, coverageFrom, coverageTo);
-  const raw = await callLlm(prompt, PERSONAL_REPORT_TOKENS);
+  if (filterResult.kept.length === 0) {
+    console.log("  [personal] Stage 1 filtered all candidates — generating no-update report.");
+    return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
+  }
+
+  console.log(`  [personal] Filter: ${filterResult.kept.length} events kept, ${filterResult.excluded?.length ?? 0} excluded`);
+
+  // Stage 2: Generate report from filtered events
+  console.log("  [personal] Stage 2: generating structured report...");
+  const reportPrompt = buildReportPrompt(candidates, filterResult, config, coverageFrom, coverageTo);
+  const reportTokens = 8192;
+  const raw = await callLlm(reportPrompt, reportTokens);
   const json = parseLlmJson<PersonalReportJson>(raw);
 
   if (!json || !json.topics) {
-    console.error("  [personal] Failed to parse LLM response as JSON.");
+    console.error("  [personal] Stage 2 report parse failed.");
     return null;
   }
 
@@ -555,6 +718,18 @@ export async function generatePersonalReport(
   json.generatedAt = new Date().toISOString();
   json.coverageFrom = coverageFrom;
   json.coverageTo = coverageTo;
+
+  // Validate
+  const candidateUrlSet = buildCandidateUrlSet(candidates);
+  const validation = validateReport(json, config, candidateUrlSet);
+
+  if (!validation.ok) {
+    console.error("  [personal] Validation failed:");
+    for (const err of validation.errors) {
+      console.error(`    ${err.code}: ${err.message}`);
+    }
+    return null;
+  }
 
   const markdown = renderMarkdown(json, dateStr, lang);
 
@@ -564,6 +739,291 @@ export async function generatePersonalReport(
 
   return { json, markdown };
 }
+
+/**
+ * Generates a deterministic "no important updates" report.
+ */
+export function generateNoUpdateReport(
+  config: PersonalReportConfig,
+  coverageFrom: string,
+  coverageTo: string,
+  dateStr: string,
+  lang: Lang,
+): { json: PersonalReportJson; markdown: string } {
+  const toolStatus: Record<string, string> = {};
+  for (const tool of config.primaryTools) {
+    toolStatus[tool] = "本期无重要更新";
+  }
+
+  const json: PersonalReportJson = {
+    generatedAt: new Date().toISOString(),
+    coverageFrom,
+    coverageTo,
+    overview: [],
+    toolStatus,
+    topics: [],
+  };
+
+  const markdown = renderMarkdown(json, dateStr, lang);
+
+  saveFile(JSON.stringify(json, null, 2), dateStr, "personal-digest.json");
+  saveFile(markdown, dateStr, lang === "zh" ? "ai-personal.md" : "ai-personal-en.md");
+
+  return { json, markdown };
+}
+
+// ---------------------------------------------------------------------------
+// Stage 2: Report Prompt — generate structured report from filtered events
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds the LLM prompt for Stage 2: generate the final structured report
+ * from the filtered and merged events.
+ */
+export function buildReportPrompt(
+  candidates: MergedCandidate[],
+  filterResult: FilterResult,
+  config: PersonalReportConfig,
+  coverageFrom: string,
+  coverageTo: string,
+): string {
+  // Build candidate lookup by 1-indexed position
+  const candidateLookup = new Map<number, MergedCandidate>();
+  candidates.forEach((c, i) => candidateLookup.set(i + 1, c));
+
+  // Build filtered event blocks with full context
+  const eventBlocks = filterResult.kept
+    .map((event, i) => {
+      const keepCandidates = event.keepIds
+        .map((id) => candidateLookup.get(Number(id)))
+        .filter(Boolean) as MergedCandidate[];
+      const mergedCandidates = (event.mergedIds ?? [])
+        .map((id) => candidateLookup.get(Number(id)))
+        .filter(Boolean) as MergedCandidate[];
+      const allCandidates = [...keepCandidates, ...mergedCandidates];
+
+      const allSources = allCandidates.flatMap((c) => [
+        { name: c.sourceName, url: c.sourceUrl },
+        ...c.additionalSources.map((url) => ({ name: "Additional Source", url })),
+      ]);
+      // Dedup sources by URL
+      const seenUrls = new Set<string>();
+      const uniqueSources = allSources.filter((s) => {
+        if (seenUrls.has(s.url)) return false;
+        seenUrls.add(s.url);
+        return true;
+      });
+
+      return (
+        `[Event ${i + 1}] ${event.title}\n` +
+        `  Topic: ${event.topic}\n` +
+        `  Relevance: ${event.relevance}\n` +
+        `  Confidence: ${event.confidence}\n` +
+        `  Needs Context: ${event.needsContext}\n` +
+        `  Candidate Details:\n` +
+        allCandidates
+          .map(
+            (c) =>
+              `    - ${c.title} (${c.subject})\n` +
+              `      Summary: ${c.summary}\n` +
+              `      Type: ${c.infoType}, Time: ${c.eventTime}, Official: ${c.officialConfirmed}\n` +
+              `      Source: ${c.sourceName} — ${c.sourceUrl}\n` +
+              `      Raw: ${c.rawSummary}`,
+          )
+          .join("\n") +
+        `\n  Available Sources: ${JSON.stringify(uniqueSources)}`
+      );
+    })
+    .join("\n\n");
+
+  return `你是一位 AI 技术领域的个人情报分析师。你的任务是将以下已筛选的事件整理成一份结构化的中文个人简报。
+
+## 用户画像
+- 主力工具：${config.primaryTools.join("、")}
+- 平台：${config.platforms.join("、")}
+- 使用场景：${config.usageContext}
+- 关注维度：${config.focusTopics.join("、")}
+- 排除维度：${config.excludedTopics.join("、")}
+
+## 覆盖时间
+${coverageFrom} ～ ${coverageTo}
+
+## 已筛选事件
+${eventBlocks}
+
+## 输出要求
+
+请输出严格的 JSON（不要包含 markdown 代码块标记），结构如下：
+
+{
+  "overview": [
+    { "id": "evt-1", "topic": "主题名", "summary": "一句话结论" }
+  ],
+  "toolStatus": {
+    "codex": "一句话状态或'本期无重要更新'",
+    "claude-code": "一句话状态或'本期无重要更新'"
+  },
+  "topics": [
+    {
+      "name": "主题名",
+      "items": [
+        {
+          "id": "evt-1",
+          "candidateIds": ["https://github.com/..."],
+          "title": "条目标题",
+          "eventTime": "2026-07-27T08:00:00Z",
+          "updateKind": "new",
+          "what": "发生了什么",
+          "why": "为什么值得关注",
+          "impact": "对用户的影响",
+          "action": "建议行动（可选）",
+          "status": "已确认",
+          "projectContext": "陌生项目的背景说明（需要时）",
+          "sources": [{ "name": "GitHub", "url": "https://github.com/..." }]
+        }
+      ]
+    }
+  ]
+}
+
+## 规则
+
+1. overview 最多 ${config.overviewLimit} 条，每条引用一个正文条目的 id。
+2. 正文 topics 中的 items 总数不超过 ${config.detailLimit} 条。
+3. 按主题组织，不按来源或项目组织。
+4. 每个条目必须有唯一的 id（格式 evt-N）。
+5. 每个条目必须有 eventTime（ISO-8601 格式），来自对应候选事件的时间。
+6. 每个条目必须有 candidateIds，列出对应的原始候选 URL。
+7. updateKind 必须是 "new"、"updated" 或 "snapshot-change" 之一。
+8. status 必须是 "已确认" 或 "社区信号"。
+9. sources 中的 URL 必须来自候选事件的 Available Sources，禁止编造。
+10. toolStatus 的 key 必须是：${config.primaryTools.join("、")}。
+11. 主力工具没有高价值更新时，toolStatus 写"本期无重要更新"。
+12. 陌生项目必须包含 projectContext，说明"它是什么"和"为什么与你有关"。
+13. 商业机会只有在具体、可信、可行动时才在 impact 或 action 中提及。
+14. 纯版本号更新不值得单独列出，除非有实质功能变化。`;
+}
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+/** Build the set of all valid URLs from candidates for URL whitelist checking. */
+export function buildCandidateUrlSet(candidates: MergedCandidate[]): Set<string> {
+  const urls = new Set<string>();
+  for (const c of candidates) {
+    urls.add(c.sourceUrl);
+    for (const url of c.additionalSources) {
+      urls.add(url);
+    }
+  }
+  return urls;
+}
+
+const VALID_STATUSES = new Set(["已确认", "社区信号"]);
+const VALID_UPDATE_KINDS = new Set(["new", "updated", "snapshot-change"]);
+
+/**
+ * Validates the LLM-generated report JSON against strict rules.
+ */
+export function validateReport(
+  json: PersonalReportJson,
+  config: PersonalReportConfig,
+  candidateUrls: Set<string>,
+): ValidateResult {
+  const errors: ValidateResult["errors"] = [];
+
+  // Check overview limit
+  if (json.overview && json.overview.length > config.overviewLimit) {
+    errors.push({
+      code: "OVERVIEW_OVER_LIMIT",
+      message: `overview has ${json.overview.length} items, limit is ${config.overviewLimit}`,
+    });
+  }
+
+  // Collect all item IDs and validate items
+  const allItemIds = new Set<string>();
+  const allItems = (json.topics ?? []).flatMap((t) => t.items ?? []);
+
+  // Check detail limit
+  if (allItems.length > config.detailLimit) {
+    errors.push({
+      code: "DETAILS_OVER_LIMIT",
+      message: `total items ${allItems.length}, limit is ${config.detailLimit}`,
+    });
+  }
+
+  for (const item of allItems) {
+    // Item ID
+    if (!item.id) {
+      errors.push({ code: "MISSING_ITEM_ID", message: `item missing id: ${item.title}` });
+    } else {
+      allItemIds.add(item.id);
+    }
+
+    // Event time
+    if (!item.eventTime || item.eventTime === "0") {
+      errors.push({ code: "MISSING_EVENT_TIME", message: `item missing eventTime: ${item.title}` });
+    }
+
+    // Status
+    if (!VALID_STATUSES.has(item.status)) {
+      errors.push({ code: "INVALID_STATUS", message: `invalid status "${item.status}" in: ${item.title}` });
+    }
+
+    // Update kind
+    if (!VALID_UPDATE_KINDS.has(item.updateKind)) {
+      errors.push({
+        code: "INVALID_UPDATE_KIND",
+        message: `invalid updateKind "${item.updateKind}" in: ${item.title}`,
+      });
+    }
+
+    // Candidate IDs present
+    if (!item.candidateIds || item.candidateIds.length === 0) {
+      errors.push({ code: "MISSING_CANDIDATE_IDS", message: `item missing candidateIds: ${item.title}` });
+    }
+
+    // Source URL whitelist
+    for (const source of item.sources ?? []) {
+      if (!source.url) {
+        errors.push({ code: "MISSING_SOURCE_URL", message: `source missing url in: ${item.title}` });
+      } else if (!candidateUrls.has(source.url)) {
+        errors.push({
+          code: "FABRICATED_URL",
+          message: `fabricated URL not in candidates: ${source.url} (in: ${item.title})`,
+        });
+      }
+    }
+  }
+
+  // Overview references valid item IDs
+  for (const ov of json.overview ?? []) {
+    if (ov.id && !allItemIds.has(ov.id)) {
+      errors.push({
+        code: "OVERVIEW_REF_MISSING",
+        message: `overview references non-existent item: ${ov.id}`,
+      });
+    }
+  }
+
+  // toolStatus must contain all primary tools
+  const toolStatusKeys = new Set(Object.keys(json.toolStatus ?? {}));
+  for (const tool of config.primaryTools) {
+    if (!toolStatusKeys.has(tool)) {
+      errors.push({
+        code: "TOOL_STATUS_MISSING_TOOL",
+        message: `toolStatus missing primary tool: ${tool}`,
+      });
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+// ---------------------------------------------------------------------------
+// Report Rendering: Markdown
+// ---------------------------------------------------------------------------
 
 /**
  * Renders the structured JSON report to Markdown.
@@ -615,10 +1075,20 @@ function renderMarkdown(report: PersonalReportJson, dateStr: string, lang: Lang)
       lines.push(
         `- ${lang === "zh" ? "状态" : "Status"}：${item.status}`,
       );
+      if (item.updateKind) {
+        const kindLabel = item.updateKind === "new" ? "本期新建" : item.updateKind === "updated" ? "旧事项更新" : "快照变化";
+        lines.push(`- ${lang === "zh" ? "更新类型" : "Update Type"}：${kindLabel}`);
+      }
+      if (item.eventTime) {
+        lines.push(`- ${lang === "zh" ? "时间" : "Time"}：${item.eventTime}`);
+      }
       const sourceLinks = (item.sources ?? [])
         .map((s) => `[${s.name}](${s.url})`)
         .join(" · ");
       lines.push(`- ${lang === "zh" ? "来源" : "Sources"}：${sourceLinks}`);
+      if (item.projectContext) {
+        lines.push(`- ${lang === "zh" ? "项目背景" : "Project Context"}：${item.projectContext}`);
+      }
       lines.push("");
     }
   }

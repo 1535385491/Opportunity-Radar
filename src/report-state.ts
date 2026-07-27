@@ -12,6 +12,11 @@ import path from "node:path";
 // Types
 // ---------------------------------------------------------------------------
 
+export interface SourceState {
+  lastSuccessfulAt: string | null;
+  lastError?: string;
+}
+
 export interface ReportState {
   /** ISO-8601 timestamp of the last successful report generation. */
   lastSuccessfulAt: string;
@@ -19,6 +24,8 @@ export interface ReportState {
   lastReportDate: string;
   /** Per-source snapshot markers for dedup of trending/snapshot sources. */
   snapshotMarkers: Record<string, unknown>;
+  /** Per-source collection cursors. Keyed by source ID (e.g. "github-codex"). */
+  sources?: Record<string, SourceState>;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,4 +102,67 @@ export function updateStateAfterSuccess(
  */
 export function getFallbackDays(): number {
   return DEFAULT_FALLBACK_DAYS;
+}
+
+// ---------------------------------------------------------------------------
+// Per-source state tracking
+// ---------------------------------------------------------------------------
+
+/**
+ * Calculates the "since" timestamp for a specific source.
+ * Falls back to the global `lastSuccessfulAt` if no per-source state exists.
+ */
+export function calculateSourceSince(
+  state: ReportState | null,
+  sourceId: string,
+): string {
+  const sourceState = state?.sources?.[sourceId];
+  if (sourceState?.lastSuccessfulAt) {
+    return sourceState.lastSuccessfulAt;
+  }
+  return calculateSince(state);
+}
+
+/**
+ * Updates per-source state after a successful run.
+ * Only advances cursors for sources that succeeded.
+ */
+export function updateSourceStates(
+  prev: ReportState | null,
+  sourceResults: Record<string, { success: boolean; error?: string }>,
+  now: Date = new Date(),
+): Record<string, SourceState> {
+  const prevSources = prev?.sources ?? {};
+  const result: Record<string, SourceState> = {};
+
+  for (const [sourceId, sourceResult] of Object.entries(sourceResults)) {
+    if (sourceResult.success) {
+      result[sourceId] = {
+        lastSuccessfulAt: now.toISOString(),
+      };
+    } else {
+      // Preserve existing cursor, record error
+      result[sourceId] = {
+        lastSuccessfulAt: prevSources[sourceId]?.lastSuccessfulAt ?? null,
+        lastError: sourceResult.error ?? "unknown error",
+      };
+    }
+  }
+
+  // Preserve any sources not in this run
+  for (const [sourceId, sourceState] of Object.entries(prevSources)) {
+    if (!(sourceId in result)) {
+      result[sourceId] = sourceState;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Checks if a report has already been generated for the given date.
+ * Used for same-day re-run detection.
+ */
+export function checkSameDay(state: ReportState | null, dateStr: string): boolean {
+  return state?.lastReportDate === dateStr;
 }

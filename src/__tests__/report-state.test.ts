@@ -6,6 +6,9 @@ import {
   calculateSince,
   updateStateAfterSuccess,
   getFallbackDays,
+  checkSameDay,
+  calculateSourceSince,
+  updateSourceStates,
 } from "../report-state.ts";
 
 // ---------------------------------------------------------------------------
@@ -168,5 +171,124 @@ describe("updateStateAfterSuccess", () => {
     // (The pipeline simply doesn't call updateStateAfterSuccess)
     expect(prev.lastSuccessfulAt).toBe("2026-07-25T08:00:00.000Z");
     expect(prev.lastReportDate).toBe("2026-07-25");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkSameDay
+// ---------------------------------------------------------------------------
+
+describe("checkSameDay", () => {
+  it("returns true when lastReportDate matches", () => {
+    const state = {
+      lastSuccessfulAt: "2026-07-27T08:00:00.000Z",
+      lastReportDate: "2026-07-27",
+      snapshotMarkers: {},
+    };
+    expect(checkSameDay(state, "2026-07-27")).toBe(true);
+  });
+
+  it("returns false when dates differ", () => {
+    const state = {
+      lastSuccessfulAt: "2026-07-26T08:00:00.000Z",
+      lastReportDate: "2026-07-26",
+      snapshotMarkers: {},
+    };
+    expect(checkSameDay(state, "2026-07-27")).toBe(false);
+  });
+
+  it("returns false when state is null", () => {
+    expect(checkSameDay(null, "2026-07-27")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// calculateSourceSince
+// ---------------------------------------------------------------------------
+
+describe("calculateSourceSince", () => {
+  it("returns source-specific cursor when available", () => {
+    const state = {
+      lastSuccessfulAt: "2026-07-25T08:00:00.000Z",
+      lastReportDate: "2026-07-25",
+      snapshotMarkers: {},
+      sources: {
+        "github-codex": { lastSuccessfulAt: "2026-07-26T10:00:00.000Z" },
+      },
+    };
+    expect(calculateSourceSince(state, "github-codex")).toBe("2026-07-26T10:00:00.000Z");
+  });
+
+  it("falls back to global lastSuccessfulAt when source has no cursor", () => {
+    const state = {
+      lastSuccessfulAt: "2026-07-25T08:00:00.000Z",
+      lastReportDate: "2026-07-25",
+      snapshotMarkers: {},
+    };
+    expect(calculateSourceSince(state, "github-codex")).toBe("2026-07-25T08:00:00.000Z");
+  });
+
+  it("falls back to global when state is null", () => {
+    const now = new Date("2026-07-27T12:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const result = calculateSourceSince(null, "github-codex");
+    const resultDate = new Date(result);
+    const days = getFallbackDays();
+    expect(resultDate.getDate()).toBe(now.getDate() - days);
+    vi.useRealTimers();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateSourceStates
+// ---------------------------------------------------------------------------
+
+describe("updateSourceStates", () => {
+  it("advances cursor for successful sources", () => {
+    const now = new Date("2026-07-27T12:00:00.000Z");
+    const results = {
+      "github-codex": { success: true },
+      hn: { success: false, error: "fetch failed" },
+    };
+    const states = updateSourceStates(null, results, now);
+    expect(states["github-codex"]!.lastSuccessfulAt).toBe("2026-07-27T12:00:00.000Z");
+    expect(states["hn"]!.lastSuccessfulAt).toBeNull();
+    expect(states["hn"]!.lastError).toBe("fetch failed");
+  });
+
+  it("preserves existing cursor for failed sources", () => {
+    const prev = {
+      lastSuccessfulAt: "2026-07-25T08:00:00.000Z",
+      lastReportDate: "2026-07-25",
+      snapshotMarkers: {},
+      sources: {
+        hn: { lastSuccessfulAt: "2026-07-26T08:00:00.000Z" },
+      },
+    };
+    const now = new Date("2026-07-27T12:00:00.000Z");
+    const results = {
+      hn: { success: false, error: "timeout" },
+    };
+    const states = updateSourceStates(prev, results, now);
+    expect(states["hn"]!.lastSuccessfulAt).toBe("2026-07-26T08:00:00.000Z");
+    expect(states["hn"]!.lastError).toBe("timeout");
+  });
+
+  it("preserves sources not in current run", () => {
+    const prev = {
+      lastSuccessfulAt: "2026-07-25T08:00:00.000Z",
+      lastReportDate: "2026-07-25",
+      snapshotMarkers: {},
+      sources: {
+        arxiv: { lastSuccessfulAt: "2026-07-26T08:00:00.000Z" },
+      },
+    };
+    const now = new Date("2026-07-27T12:00:00.000Z");
+    const results = {
+      hn: { success: true },
+    };
+    const states = updateSourceStates(prev, results, now);
+    expect(states["arxiv"]!.lastSuccessfulAt).toBe("2026-07-26T08:00:00.000Z");
   });
 });
