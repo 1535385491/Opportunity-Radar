@@ -124,7 +124,13 @@ async function main(): Promise<void> {
   const highlightsPath = path.join("digests", date, "highlights.json");
   if (fs.existsSync(highlightsPath)) {
     try {
-      highlights = JSON.parse(fs.readFileSync(highlightsPath, "utf-8")) as Highlights;
+      const raw = JSON.parse(fs.readFileSync(highlightsPath, "utf-8")) as Record<string, unknown>;
+      // Support both old bilingual format {zh: ..., en: ...} and new flat format
+      if (raw?.zh || raw?.en) {
+        highlights = raw as unknown as Highlights;
+      } else {
+        highlights = { zh: raw as Record<string, string[]>, en: {} };
+      }
     } catch {
       console.log("[notify] Failed to parse highlights.json — sending without highlights.");
     }

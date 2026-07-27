@@ -55,8 +55,15 @@ interface DevtoApiArticle {
 // Fetch
 // ---------------------------------------------------------------------------
 
-export async function fetchDevtoData(): Promise<DevtoData> {
+export async function fetchDevtoData(since?: string): Promise<DevtoData> {
   const seen = new Map<number, DevtoArticle>();
+
+  // Calculate the "top" window in days based on `since`.
+  // Dev.to API's `top=1` means past 1 day; larger values extend the window.
+  const sinceMs = since ? Date.parse(since) : NaN;
+  const topDays = !isNaN(sinceMs)
+    ? Math.max(1, Math.ceil((Date.now() - sinceMs) / (24 * 60 * 60 * 1000)))
+    : 1;
 
   try {
     await Promise.all(
@@ -65,7 +72,7 @@ export async function fetchDevtoData(): Promise<DevtoData> {
           const params = new URLSearchParams({
             tag,
             per_page: String(DEVTO_PER_PAGE),
-            top: "1", // top articles from the past 1 day
+            top: String(topDays),
           });
 
           const resp = await fetch(`${API_URL}?${params}`, {

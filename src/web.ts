@@ -207,6 +207,30 @@ export function titleFromUrl(url: string): string {
   }
 }
 
+/**
+ * Attempt to extract a publish date from a URL path.
+ * Many AI company blogs use /YYYY/MM/DD/ or /YYYY/MM/ or /YYYY/ patterns.
+ * Returns ISO date string or null if no date could be extracted.
+ */
+export function extractPublishDate(url: string): string | null {
+  try {
+    const path = new URL(url).pathname;
+    // Match /YYYY/MM/DD/ pattern
+    const fullDate = path.match(/\/(\d{4})\/(\d{2})\/(\d{2})\//);
+    if (fullDate) {
+      return `${fullDate[1]}-${fullDate[2]}-${fullDate[3]}`;
+    }
+    // Match /YYYY/MM/ pattern (use first of month)
+    const monthDate = path.match(/\/(\d{4})\/(\d{2})\//);
+    if (monthDate) {
+      return `${monthDate[1]}-${monthDate[2]}-01`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // URL discovery
 // ---------------------------------------------------------------------------
@@ -282,6 +306,7 @@ export function saveWebState(state: WebState): void {
 export async function fetchSiteContent(
   site: "anthropic" | "openai",
   state: WebState,
+  since?: string,
 ): Promise<WebFetchResult> {
   const cfg = SITE_CONFIGS[site];
   const siteState = state[site];
@@ -347,6 +372,20 @@ export async function fetchSiteContent(
         if (prev && hashes[loc] && hash === hashes[loc]) {
           console.log(`  [web/${site}] Skipping unchanged content: ${loc}`);
           continue;
+        }
+
+        // Date validation for new URLs: if we have a `since` window and can
+        // extract a publish date from the URL, verify it's within the window.
+        // First-time old articles are marked as seen but not included.
+        if (since && !prev) {
+          const pubDate = extractPublishDate(loc);
+          if (pubDate && pubDate < since.slice(0, 10)) {
+            console.log(`  [web/${site}] Skipping old article (${pubDate}): ${loc}`);
+            // Still mark as seen so it's not rediscovered next run
+            siteState.seenUrls[loc] = lastmod ?? "seen";
+            hashes[loc] = hash;
+            continue;
+          }
         }
 
         hashes[loc] = hash;

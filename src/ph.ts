@@ -104,17 +104,18 @@ interface PhResponse {
 // Fetch
 // ---------------------------------------------------------------------------
 
-export async function fetchPhData(): Promise<PhData> {
+export async function fetchPhData(since?: string): Promise<PhData> {
   const token = process.env["PRODUCTHUNT_TOKEN"] ?? "";
   if (!token) {
     console.log("  [ph] PRODUCTHUNT_TOKEN not set — skipping.");
     return { products: [], fetchSuccess: false };
   }
 
-  // Fetch yesterday's products (they've had a full day to accumulate votes)
+  // Use `since` for postedAfter if provided, otherwise 48h ago
   const now = new Date();
+  const sinceMs = since ? Date.parse(since) : NaN;
+  const twoDaysAgo = !isNaN(sinceMs) ? new Date(sinceMs) : new Date(now.getTime() - 48 * 60 * 60 * 1000);
   const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const twoDaysAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
 
   try {
     const resp = await fetch(API_URL, {

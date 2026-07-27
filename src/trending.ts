@@ -30,6 +30,16 @@ export interface TrendingData {
   trendingRepos: TrendingRepo[];
   searchRepos: SearchRepo[];
   trendingFetchSuccess: boolean;
+  /** Snapshot markers for dedup in subsequent runs. */
+  snapshotMarkers: TrendingSnapshot;
+}
+
+/** Stored in report-state.json to detect new/changed trending repos. */
+export interface TrendingSnapshot {
+  /** Set of fullNames that appeared in the trending page. */
+  trendingNames: string[];
+  /** fullName → totalStars from the previous snapshot. */
+  starCounts: Record<string, number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,13 +203,34 @@ async function searchAiRepos(sevenDaysAgo: string): Promise<SearchRepo[]> {
 // Export
 // ---------------------------------------------------------------------------
 
-export async function fetchTrendingData(): Promise<TrendingData> {
+export async function fetchTrendingData(
+  previousSnapshot?: TrendingSnapshot,
+): Promise<TrendingData> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const [{ repos: trendingRepos, success }, searchRepos] = await Promise.all([
+  const [{ repos: allTrendingRepos, success }, searchRepos] = await Promise.all([
     fetchGitHubTrending(),
     searchAiRepos(sevenDaysAgo),
   ]);
 
-  return { trendingRepos, searchRepos, trendingFetchSuccess: success };
+  // Build new snapshot markers
+  const newSnapshot: TrendingSnapshot = {
+    trendingNames: allTrendingRepos.map((r) => r.fullName),
+    starCounts: Object.fromEntries(allTrendingRepos.map((r) => [r.fullName, r.totalStars])),
+  };
+
+  // Filter trending repos: only new entrants or significant star growth
+  const prevNames = previousSnapshot ? new Set(previousSnapshot.trendingNames) : null;
+  const prevStars = previousSnapshot?.starCounts ?? {};
+
+  const trendingRepos = prevNames
+    ? allTrendingRepos.filter((r) => {
+        if (!prevNames.has(r.fullName)) return true; // new entrant
+        const prev = prevStars[r.fullName] ?? 0;
+        const growth = r.totalStars - prev;
+        return growth > 50 || (prev > 0 && growth / prev > 0.2); // significant growth
+      })
+    : allTrendingRepos;
+
+  return { trendingRepos, searchRepos, trendingFetchSuccess: success, snapshotMarkers: newSnapshot };
 }

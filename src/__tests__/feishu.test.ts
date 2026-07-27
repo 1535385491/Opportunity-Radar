@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { buildFeishuMessage } from "../feishu.ts";
+import { buildFeishuMessage, makeSendKey } from "../feishu.ts";
 import type { Highlights } from "../notify.ts";
 
 const BASE_URL = "https://example.com/radar";
@@ -92,5 +92,23 @@ describe("buildFeishuMessage", () => {
     const msg = buildFeishuMessage("2026-03-09", ["ai-cli", "ai-cli-en"], BASE_URL, null);
     expect(msg).toContain("AI CLI 工具");
     expect(msg).not.toContain("◦");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Notification dedup
+// ---------------------------------------------------------------------------
+
+describe("makeSendKey", () => {
+  it("creates a key from type and date", () => {
+    expect(makeSendKey("daily", "2026-07-27")).toBe("daily:2026-07-27");
+  });
+
+  it("distinguishes report types", () => {
+    expect(makeSendKey("daily", "2026-07-27")).not.toBe(makeSendKey("weekly", "2026-07-27"));
+  });
+
+  it("distinguishes dates", () => {
+    expect(makeSendKey("daily", "2026-07-27")).not.toBe(makeSendKey("daily", "2026-07-28"));
   });
 });

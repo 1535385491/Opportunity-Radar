@@ -23,6 +23,34 @@ import type { OpportunityCard } from "./prompts-data.ts";
 const PAGES_URL_DEFAULT = "https://duanyytop.github.io/agents-radar";
 
 // ---------------------------------------------------------------------------
+// Notification dedup state
+// ---------------------------------------------------------------------------
+
+export interface NotificationState {
+  sent: Record<string, string>; // key → ISO timestamp of last send
+}
+
+const NOTIFICATION_STATE_FILE = path.join("digests", "notification-state.json");
+
+export function loadNotificationState(): NotificationState {
+  try {
+    if (!fs.existsSync(NOTIFICATION_STATE_FILE)) return { sent: {} };
+    return JSON.parse(fs.readFileSync(NOTIFICATION_STATE_FILE, "utf-8")) as NotificationState;
+  } catch {
+    return { sent: {} };
+  }
+}
+
+export function saveNotificationState(state: NotificationState): void {
+  fs.mkdirSync(path.dirname(NOTIFICATION_STATE_FILE), { recursive: true });
+  fs.writeFileSync(NOTIFICATION_STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+}
+
+export function makeSendKey(type: string, date: string): string {
+  return `${type}:${date}`;
+}
+
+// ---------------------------------------------------------------------------
 // Feishu Open API — app-based authentication
 // ---------------------------------------------------------------------------
 
@@ -370,7 +398,13 @@ async function main(): Promise<void> {
   const highlightsPath = path.join("digests", date, "highlights.json");
   if (fs.existsSync(highlightsPath)) {
     try {
-      highlights = JSON.parse(fs.readFileSync(highlightsPath, "utf-8")) as Highlights;
+      const raw = JSON.parse(fs.readFileSync(highlightsPath, "utf-8")) as Record<string, unknown>;
+      // Support both old bilingual format {zh: ..., en: ...} and new flat format
+      if (raw?.zh || raw?.en) {
+        highlights = raw as unknown as Highlights;
+      } else {
+        highlights = { zh: raw as Record<string, string[]>, en: {} };
+      }
     } catch {
       console.log("[feishu] Failed to parse highlights.json — sending without highlights.");
     }
@@ -381,8 +415,9 @@ async function main(): Promise<void> {
   const oppPath = path.join("digests", date, "opportunity-card.json");
   if (fs.existsSync(oppPath)) {
     try {
-      const allLangs = JSON.parse(fs.readFileSync(oppPath, "utf-8")) as Record<string, OpportunityCard>;
-      opportunity = allLangs["zh"] ?? null;
+      const raw = JSON.parse(fs.readFileSync(oppPath, "utf-8"));
+      // Support both old bilingual format {zh: ..., en: ...} and new flat format
+      opportunity = raw?.summary !== undefined ? raw as OpportunityCard : (raw?.zh ?? null);
     } catch {
       console.log("[feishu] Failed to parse opportunity-card.json — falling back to highlights.");
     }
@@ -398,9 +433,24 @@ async function main(): Promise<void> {
 
   const card = buildCard({ date, reports, pagesUrl: PAGES_URL, highlights, opportunity, type });
 
+  // Dedup check: skip if already sent for this date unless FORCE_SEND=true
+  const sendKey = makeSendKey(type, date);
+  const notifState = loadNotificationState();
+  const forceSend = process.env["FORCE_SEND"] === "true";
+
+  if (notifState.sent[sendKey] && !forceSend) {
+    console.log(`[feishu] Already sent ${sendKey} at ${notifState.sent[sendKey]} — skipping. Use FORCE_SEND=true to resend.`);
+    return;
+  }
+
   const mode = hasApp ? "Open API" : `${webhooks.length} webhook(s)`;
   console.log(`[feishu] Sending ${type} card to ${mode} for ${date} (${reports.length} reports)…`);
   await sendCard(card);
+
+  // Record successful send
+  notifState.sent[sendKey] = new Date().toISOString();
+  saveNotificationState(notifState);
+
   console.log("[feishu] Done!");
 }
 

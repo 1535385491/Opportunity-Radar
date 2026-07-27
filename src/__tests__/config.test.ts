@@ -91,3 +91,78 @@ openclaw:
     expect(config.openclaw.id).toBe("openclaw"); // default
   });
 });
+
+// ---------------------------------------------------------------------------
+// personalReport config
+// ---------------------------------------------------------------------------
+
+describe("personalReport config", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns defaults when config file does not exist", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(false);
+    const config = loadConfig("/nonexistent/config.yml");
+    expect(config.personalReport.primaryTools).toEqual(["codex", "claude-code"]);
+    expect(config.personalReport.overviewLimit).toBe(8);
+    expect(config.personalReport.detailLimit).toBe(20);
+    expect(config.personalReport.commercialMode).toBe("exceptional_only");
+    expect(config.personalReport.unknownProjectContext).toBe(true);
+  });
+
+  it("loads custom personal_report from YAML", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readFileSync").mockReturnValue(`
+personal_report:
+  primary_tools:
+    - gemini-cli
+  platforms:
+    - linux
+    - macos
+  usage_context: research
+  overview_limit: 5
+  detail_limit: 15
+  commercial_mode: never
+  unknown_project_context: false
+`);
+    const config = loadConfig("test.yml");
+    expect(config.personalReport.primaryTools).toEqual(["gemini-cli"]);
+    expect(config.personalReport.platforms).toEqual(["linux", "macos"]);
+    expect(config.personalReport.usageContext).toBe("research");
+    expect(config.personalReport.overviewLimit).toBe(5);
+    expect(config.personalReport.detailLimit).toBe(15);
+    expect(config.personalReport.commercialMode).toBe("never");
+    expect(config.personalReport.unknownProjectContext).toBe(false);
+  });
+
+  it("falls back to defaults for empty arrays", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readFileSync").mockReturnValue(`
+personal_report:
+  primary_tools: []
+  focus_topics: []
+`);
+    const config = loadConfig("test.yml");
+    expect(config.personalReport.primaryTools).toEqual(["codex", "claude-code"]);
+    expect(config.personalReport.focusTopics.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to default commercial_mode for invalid value", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readFileSync").mockReturnValue(`
+personal_report:
+  commercial_mode: invalid_value
+`);
+    const config = loadConfig("test.yml");
+    expect(config.personalReport.commercialMode).toBe("exceptional_only");
+  });
+
+  it("defaults when personal_report section is missing", () => {
+    vi.spyOn(fs, "existsSync").mockReturnValue(true);
+    vi.spyOn(fs, "readFileSync").mockReturnValue("cli_repos: []");
+    const config = loadConfig("test.yml");
+    expect(config.personalReport).toBeDefined();
+    expect(config.personalReport.primaryTools).toEqual(["codex", "claude-code"]);
+  });
+});

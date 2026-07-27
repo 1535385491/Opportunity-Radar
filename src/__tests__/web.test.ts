@@ -8,6 +8,7 @@ import {
   titleFromUrl,
   emptyState,
   contentHash,
+  extractPublishDate,
 } from "../web.ts";
 
 // ---------------------------------------------------------------------------
@@ -224,5 +225,32 @@ describe("contentHash", () => {
 
   it("returns different hash for empty vs non-empty", () => {
     expect(contentHash("")).not.toBe(contentHash("x"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractPublishDate
+// ---------------------------------------------------------------------------
+
+describe("extractPublishDate", () => {
+  it("extracts full date from /YYYY/MM/DD/ URL pattern", () => {
+    expect(extractPublishDate("https://anthropic.com/news/2026/07/25/some-article")).toBe("2026-07-25");
+  });
+
+  it("extracts month from /YYYY/MM/ URL pattern", () => {
+    expect(extractPublishDate("https://anthropic.com/research/2026/03/paper")).toBe("2026-03-01");
+  });
+
+  it("returns null for URLs without date patterns", () => {
+    expect(extractPublishDate("https://anthropic.com/news/some-article")).toBeNull();
+    expect(extractPublishDate("https://openai.com/research/gpt-5")).toBeNull();
+  });
+
+  it("returns null for invalid URLs", () => {
+    expect(extractPublishDate("not-a-url")).toBeNull();
+  });
+
+  it("returns null for partial date patterns", () => {
+    expect(extractPublishDate("https://example.com/2026/article")).toBeNull();
   });
 });

@@ -23,6 +23,16 @@ export interface HfModel {
 export interface HfData {
   models: HfModel[];
   fetchSuccess: boolean;
+  /** Snapshot markers for dedup in subsequent runs. */
+  snapshotMarkers: HfSnapshot;
+}
+
+/** Stored in report-state.json to detect new/changed HF models. */
+export interface HfSnapshot {
+  /** Set of model IDs that appeared in the trending list. */
+  modelIds: string[];
+  /** modelId → likes from the previous snapshot. */
+  likeCounts: Record<string, number>;
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +61,7 @@ interface HfApiModel {
 // Fetch
 // ---------------------------------------------------------------------------
 
-export async function fetchHfData(): Promise<HfData> {
+export async function fetchHfData(previousSnapshot?: HfSnapshot): Promise<HfData> {
   try {
     // Fetch trending models (sorted by likes, recently modified)
     const params = new URLSearchParams({
@@ -67,7 +77,7 @@ export async function fetchHfData(): Promise<HfData> {
 
     if (!resp.ok) {
       console.error(`  [hf] HTTP ${resp.status}`);
-      return { models: [], fetchSuccess: false };
+      return { models: [], fetchSuccess: false, snapshotMarkers: { modelIds: [], likeCounts: {} } };
     }
 
     const raw = (await resp.json()) as HfApiModel[];
@@ -83,10 +93,29 @@ export async function fetchHfData(): Promise<HfData> {
       url: `https://huggingface.co/${m.id}`,
     }));
 
-    console.log(`  [hf] ${models.length} trending models`);
-    return { models, fetchSuccess: models.length > 0 };
+    // Build new snapshot markers
+    const newSnapshot: HfSnapshot = {
+      modelIds: models.map((m) => m.id),
+      likeCounts: Object.fromEntries(models.map((m) => [m.id, m.likes])),
+    };
+
+    // Filter: only new entrants or significant like growth
+    const prevIds = previousSnapshot ? new Set(previousSnapshot.modelIds) : null;
+    const prevLikes = previousSnapshot?.likeCounts ?? {};
+
+    const filteredModels = prevIds
+      ? models.filter((m) => {
+          if (!prevIds.has(m.id)) return true; // new entrant
+          const prev = prevLikes[m.id] ?? 0;
+          const growth = m.likes - prev;
+          return growth > 100 || (prev > 0 && growth / prev > 0.3); // significant growth
+        })
+      : models;
+
+    console.log(`  [hf] ${filteredModels.length} trending models (from ${models.length} total)`);
+    return { models: filteredModels, fetchSuccess: filteredModels.length > 0, snapshotMarkers: newSnapshot };
   } catch (err) {
     console.error(`  [hf] fetch failed: ${err}`);
-    return { models: [], fetchSuccess: false };
+    return { models: [], fetchSuccess: false, snapshotMarkers: { modelIds: [], likeCounts: {} } };
   }
 }

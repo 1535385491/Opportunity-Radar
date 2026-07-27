@@ -9,6 +9,52 @@ import yaml from "js-yaml";
 import type { RepoConfig } from "./github.ts";
 
 // ---------------------------------------------------------------------------
+// Personal report config
+// ---------------------------------------------------------------------------
+
+export interface PersonalReportConfig {
+  primaryTools: string[];
+  platforms: string[];
+  usageContext: string;
+  focusTopics: string[];
+  excludedTopics: string[];
+  overviewLimit: number;
+  detailLimit: number;
+  commercialMode: "exceptional_only" | "always" | "never";
+  unknownProjectContext: boolean;
+}
+
+const DEFAULT_PERSONAL_CONFIG: PersonalReportConfig = {
+  primaryTools: ["codex", "claude-code"],
+  platforms: ["windows"],
+  usageContext: "个人项目开发",
+  focusTopics: [
+    "上下文与记忆",
+    "Agent 能力",
+    "代码理解与编辑质量",
+    "MCP 与工具集成",
+    "模型实际表现",
+    "成本与性能",
+    "工作流变化",
+    "重大 Bug",
+  ],
+  excludedTopics: [
+    "活跃度、成熟度与生态健康度",
+    "项目定位和市场战略",
+    "社区治理与争议",
+    "纯 UI 细节",
+    "项目自身 CI、贡献和维护流程",
+    "无实际落地的远期 RFC",
+    "纯版本号",
+    "常规 Claw 项目动态",
+  ],
+  overviewLimit: 8,
+  detailLimit: 20,
+  commercialMode: "exceptional_only",
+  unknownProjectContext: true,
+};
+
+// ---------------------------------------------------------------------------
 // Schema types
 // ---------------------------------------------------------------------------
 
@@ -19,11 +65,24 @@ interface RawRepoEntry {
   paginated?: boolean;
 }
 
+interface RawPersonalReport {
+  primary_tools?: string[];
+  platforms?: string[];
+  usage_context?: string;
+  focus_topics?: string[];
+  excluded_topics?: string[];
+  overview_limit?: number;
+  detail_limit?: number;
+  commercial_mode?: string;
+  unknown_project_context?: boolean;
+}
+
 interface RawConfig {
   cli_repos?: RawRepoEntry[];
   skills_repo?: string;
   openclaw?: RawRepoEntry;
   openclaw_peers?: RawRepoEntry[];
+  personal_report?: RawPersonalReport;
 }
 
 export interface RadarConfig {
@@ -31,6 +90,7 @@ export interface RadarConfig {
   skillsRepo: string;
   openclaw: RepoConfig;
   openclawPeers: RepoConfig[];
+  personalReport: PersonalReportConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +140,51 @@ export function toRepoConfig(e: RawRepoEntry): RepoConfig {
   return { id: e.id, repo: e.repo, name: e.name, ...(e.paginated ? { paginated: true } : {}) };
 }
 
+function parsePersonalReport(raw?: RawPersonalReport): PersonalReportConfig {
+  if (!raw) return DEFAULT_PERSONAL_CONFIG;
+
+  const isValidMode = (v: unknown): v is PersonalReportConfig["commercialMode"] =>
+    v === "exceptional_only" || v === "always" || v === "never";
+
+  return {
+    primaryTools:
+      Array.isArray(raw.primary_tools) && raw.primary_tools.length > 0
+        ? raw.primary_tools
+        : DEFAULT_PERSONAL_CONFIG.primaryTools,
+    platforms:
+      Array.isArray(raw.platforms) && raw.platforms.length > 0
+        ? raw.platforms
+        : DEFAULT_PERSONAL_CONFIG.platforms,
+    usageContext:
+      typeof raw.usage_context === "string" && raw.usage_context.trim()
+        ? raw.usage_context.trim()
+        : DEFAULT_PERSONAL_CONFIG.usageContext,
+    focusTopics:
+      Array.isArray(raw.focus_topics) && raw.focus_topics.length > 0
+        ? raw.focus_topics
+        : DEFAULT_PERSONAL_CONFIG.focusTopics,
+    excludedTopics:
+      Array.isArray(raw.excluded_topics) && raw.excluded_topics.length > 0
+        ? raw.excluded_topics
+        : DEFAULT_PERSONAL_CONFIG.excludedTopics,
+    overviewLimit:
+      typeof raw.overview_limit === "number" && raw.overview_limit > 0
+        ? raw.overview_limit
+        : DEFAULT_PERSONAL_CONFIG.overviewLimit,
+    detailLimit:
+      typeof raw.detail_limit === "number" && raw.detail_limit > 0
+        ? raw.detail_limit
+        : DEFAULT_PERSONAL_CONFIG.detailLimit,
+    commercialMode: isValidMode(raw.commercial_mode)
+      ? raw.commercial_mode
+      : DEFAULT_PERSONAL_CONFIG.commercialMode,
+    unknownProjectContext:
+      typeof raw.unknown_project_context === "boolean"
+        ? raw.unknown_project_context
+        : DEFAULT_PERSONAL_CONFIG.unknownProjectContext,
+  };
+}
+
 export function loadConfig(configPath = "config.yml"): RadarConfig {
   const resolved = path.resolve(configPath);
 
@@ -90,6 +195,7 @@ export function loadConfig(configPath = "config.yml"): RadarConfig {
       skillsRepo: DEFAULT_SKILLS_REPO,
       openclaw: DEFAULT_OPENCLAW,
       openclawPeers: DEFAULT_OPENCLAW_PEERS,
+      personalReport: DEFAULT_PERSONAL_CONFIG,
     };
   }
 
@@ -112,10 +218,12 @@ export function loadConfig(configPath = "config.yml"): RadarConfig {
       ? raw.openclaw_peers.map(toRepoConfig)
       : DEFAULT_OPENCLAW_PEERS;
 
+  const personalReport = parsePersonalReport(raw?.personal_report);
+
   console.log(
     `[config] Loaded from ${configPath}: ` +
       `${cliRepos.length} CLI repos, ${openclawPeers.length} OpenClaw peers`,
   );
 
-  return { cliRepos, skillsRepo, openclaw, openclawPeers };
+  return { cliRepos, skillsRepo, openclaw, openclawPeers, personalReport };
 }
