@@ -1,0 +1,33 @@
+{
+  "zh": {
+    "summary": "Anthropic发布性能成本比翻倍的Claude Opus 5，企业AI部署成本壁垒被击穿。",
+    "signals": [
+      {
+        "title": "半价平替级AI模型",
+        "description": "Claude Opus 5性能接近顶级模型但成本仅为其一半。这将催生面向中小企业的AI代理、代码助手和内容生产SaaS新赛道，市场窗口打开。",
+        "report": "ai-web"
+      },
+      {
+        "title": "工业OCR需求爆发",
+        "description": "百度Unlimited-OCR模型下载量超250万，证明复杂图文理解在档案数字化、文档处理等B端场景有刚性需求，可构建垂直行业解决方案。",
+        "report": "ai-hf"
+      },
+      {
+        "title": "低成本模型蒸馏服务",
+        "description": "HN高分项目‘World-Model-Optimizer’提供以一半成本获得前沿模型性能的蒸馏服务，为资源有限的初创公司提供了极具吸引力的降本路径。",
+        "report": "ai-hn"
+      },
+      {
+        "title": "AI Agent可观测性",
+        "description": "开发者社区热烈讨论多智能体系统调试和追踪工具（如TraceGate），解决‘结果对但过程黑盒’的痛点，这是企业级AI代理落地的必备基础设施。",
+        "report": "ai-community"
+      },
+      {
+        "title": "跨平台客户端缺口",
+        "description": "OpenClaw社区最高优先级需求是Linux/Windows桌面客户端（#75，115评论），满足用户在桌面环境直接调用AI Agent的迫切需求，是尚未被满足的交互层机会。",
+        "report": "ai-agents"
+      }
+    ]
+  },
+  "en": {}
+}
