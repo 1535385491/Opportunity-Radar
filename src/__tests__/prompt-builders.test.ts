@@ -199,7 +199,12 @@ describe("buildTrendingPrompt", () => {
   });
 
   it("shows fetch failure message when trending fails", () => {
-    const data: TrendingData = { trendingRepos: [], searchRepos: [], trendingFetchSuccess: false, snapshotMarkers: { trendingNames: [], starCounts: {} } };
+    const data: TrendingData = {
+      trendingRepos: [],
+      searchRepos: [],
+      trendingFetchSuccess: false,
+      snapshotMarkers: { trendingNames: [], starCounts: {} },
+    };
     const result = buildTrendingPrompt(data, "2026-03-09");
     expect(result).toContain("未能抓取");
   });

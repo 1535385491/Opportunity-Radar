@@ -112,10 +112,7 @@ export function getFallbackDays(): number {
  * Calculates the "since" timestamp for a specific source.
  * Falls back to the global `lastSuccessfulAt` if no per-source state exists.
  */
-export function calculateSourceSince(
-  state: ReportState | null,
-  sourceId: string,
-): string {
+export function calculateSourceSince(state: ReportState | null, sourceId: string): string {
   const sourceState = state?.sources?.[sourceId];
   if (sourceState?.lastSuccessfulAt) {
     return sourceState.lastSuccessfulAt;
