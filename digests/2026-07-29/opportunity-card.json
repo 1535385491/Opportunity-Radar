@@ -1,0 +1,33 @@
+{
+  "zh": {
+    "summary": "OpenClaw作为核心代理框架，发布侧重数据安全与恢复的新版本，成为今日AI基建最大事件。",
+    "signals": [
+      {
+        "title": "AI代理框架的安全加固服务",
+        "description": "OpenClaw (ai-agents) 发布v2026.7.2-beta.5，核心是增强数据安全和崩溃恢复。这解决了企业采用AI代理的核心痛点：数据可靠性。能赚钱，可为企业提供基于OpenClaw的安全运维与定制化服务。",
+        "report": "ai-agents"
+      },
+      {
+        "title": "AI代理的权限治理平台",
+        "description": "微软开源 `agent-governance-toolkit` (ai-trending)，提供策略执行、零信任身份和沙盒。企业治理AI代理权限是刚需，可打包成企业级SaaS或专业咨询服务。",
+        "report": "ai-trending"
+      },
+      {
+        "title": "AI视频理解工具爆发",
+        "description": "`claude-video` (ai-trending) 让Claude能看懂视频，今日Trending榜第一，增长988 star。这打开了视频内容分析、自动生成字幕/摘要等新商业场景。",
+        "report": "ai-trending"
+      },
+      {
+        "title": "多模态模型应用加速",
+        "description": "Kimi-K3 (ai-hf) 等多模态模型热度登顶，百度OCR模型下载量超270万。多模态是技术落地关键，可针对特定行业（如文档处理、客服）开发垂直应用。",
+        "report": "ai-hf"
+      },
+      {
+        "title": "AI安全前沿研究机会",
+        "description": "Anthropic用Claude发现密码学弱点 (ai-web/ai-hn)，AI从找代码漏洞升级到找数学漏洞。长期看，AI驱动的安全测试与漏洞挖掘是新兴高价值服务领域。",
+        "report": "ai-web"
+      }
+    ]
+  },
+  "en": {}
+}
