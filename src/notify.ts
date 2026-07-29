@@ -13,14 +13,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { NOTIFY_LABELS } from "./i18n.ts";
+import { PAGES_URL as SITE_PAGES_URL } from "./site.ts";
 import type { ReportHighlights } from "./prompts-data.ts";
 
 export interface Highlights {
   zh: ReportHighlights;
   en: ReportHighlights;
 }
-
-const PAGES_URL_DEFAULT = "https://duanyytop.github.io/agents-radar";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -52,7 +51,7 @@ export function buildMessage(
   pagesUrl?: string,
   highlights?: Highlights | null,
 ): string {
-  const PAGES_URL = (pagesUrl ?? process.env["PAGES_URL"] ?? PAGES_URL_DEFAULT).replace(/\/$/, "");
+  const PAGES_URL = (pagesUrl ?? SITE_PAGES_URL).replace(/\/$/, "");
   const baseReports = reports.filter((r) => !r.endsWith("-en"));
   const isWeekly = baseReports.includes("ai-weekly");
   const isMonthly = baseReports.includes("ai-monthly");

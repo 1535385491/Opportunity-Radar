@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
+import path from "node:path";
 
 // ---------------------------------------------------------------------------
 // Mock provider — intercepts createProvider() so the module-level `provider`
@@ -18,7 +19,15 @@ vi.mock("../providers/index.ts", async (importOriginal) => {
   };
 });
 
-import { is429, callLlm, saveFile, autoGenFooter, parseLlmJson } from "../report.ts";
+import {
+  is429,
+  callLlm,
+  saveFile,
+  autoGenFooter,
+  parseLlmJson,
+  setDryRunMode,
+  isDryRunMode,
+} from "../report.ts";
 
 // ---------------------------------------------------------------------------
 // is429
@@ -81,17 +90,21 @@ describe("saveFile", () => {
 
   it("returns the expected file path", () => {
     const result = saveFile("content", "2026-03-09", "ai-cli.md");
-    expect(result).toBe("digests/2026-03-09/ai-cli.md");
+    expect(result).toBe(path.join("digests", "2026-03-09", "ai-cli.md"));
   });
 
   it("creates parent directories recursively", () => {
     saveFile("content", "2026-03-09", "ai-cli.md");
-    expect(fs.mkdirSync).toHaveBeenCalledWith("digests/2026-03-09", { recursive: true });
+    expect(fs.mkdirSync).toHaveBeenCalledWith(path.join("digests", "2026-03-09"), { recursive: true });
   });
 
   it("writes content as utf-8", () => {
     saveFile("hello world", "2026-03-09", "test.md");
-    expect(fs.writeFileSync).toHaveBeenCalledWith("digests/2026-03-09/test.md", "hello world", "utf-8");
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      path.join("digests", "2026-03-09", "test.md"),
+      "hello world",
+      "utf-8",
+    );
   });
 });
 
@@ -277,5 +290,78 @@ describe("callLlm", () => {
     const batch = Array.from({ length: 5 }, (_, i) => callLlm(`p${i}`));
     const results = await Promise.all(batch);
     expect(results).toEqual(["ok", "ok", "ok", "ok", "ok"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DRY_RUN mode — saveFile writes to preview directory
+// ---------------------------------------------------------------------------
+
+describe("DRY_RUN mode", () => {
+  beforeEach(() => {
+    vi.spyOn(fs, "mkdirSync").mockReturnValue(undefined);
+    vi.spyOn(fs, "writeFileSync").mockReturnValue(undefined);
+    setDryRunMode(false);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setDryRunMode(false);
+  });
+
+  it("setDryRunMode toggles isDryRunMode", () => {
+    expect(isDryRunMode()).toBe(false);
+    setDryRunMode(true);
+    expect(isDryRunMode()).toBe(true);
+    setDryRunMode(false);
+    expect(isDryRunMode()).toBe(false);
+  });
+
+  it("normal mode writes to digests/<date>/", () => {
+    setDryRunMode(false);
+    const result = saveFile("content", "2026-07-27", "ai-personal.md");
+    expect(result).toBe(path.join("digests", "2026-07-27", "ai-personal.md"));
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      path.join("digests", "2026-07-27", "ai-personal.md"),
+      "content",
+      "utf-8",
+    );
+  });
+
+  it("dry-run mode writes to digests/preview-<date>/", () => {
+    setDryRunMode(true);
+    const result = saveFile("content", "2026-07-27", "ai-personal.md");
+    expect(result).toBe(path.join("digests", "preview-2026-07-27", "ai-personal.md"));
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      path.join("digests", "preview-2026-07-27", "ai-personal.md"),
+      "content",
+      "utf-8",
+    );
+  });
+
+  it("dry-run mode creates the preview directory", () => {
+    setDryRunMode(true);
+    saveFile("content", "2026-07-27", "test.md");
+    expect(fs.mkdirSync).toHaveBeenCalledWith(path.join("digests", "preview-2026-07-27"), {
+      recursive: true,
+    });
+  });
+
+  it("switching back to normal mode restores normal paths", () => {
+    setDryRunMode(true);
+    saveFile("a", "2026-07-27", "a.md");
+    setDryRunMode(false);
+    saveFile("b", "2026-07-27", "b.md");
+
+    const calls = (fs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]![0]).toBe(path.join("digests", "preview-2026-07-27", "a.md"));
+    expect(calls[1]![0]).toBe(path.join("digests", "2026-07-27", "b.md"));
+  });
+
+  it("dry-run with future date never returns formal directory path", () => {
+    setDryRunMode(true);
+    const result = saveFile("content", "2099-01-16", "ai-personal.md");
+    expect(result).toBe(path.join("digests", "preview-2099-01-16", "ai-personal.md"));
+    expect(result).not.toBe(path.join("digests", "2099-01-16", "ai-personal.md"));
   });
 });

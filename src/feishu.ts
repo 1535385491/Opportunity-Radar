@@ -17,9 +17,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { NOTIFY_LABELS } from "./i18n.ts";
+import { PAGES_URL as SITE_PAGES_URL } from "./site.ts";
+import { guardReportSchema } from "./personal-report.ts";
 import type { PersonalReportJson } from "./personal-report.ts";
-
-const PAGES_URL_DEFAULT = "https://duanyytop.github.io/agents-radar";
 
 // ---------------------------------------------------------------------------
 // Notification dedup state
@@ -207,15 +207,30 @@ function buildCard(ctx: CardContext): unknown {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const elements: any[] = [];
 
-  // --- Overview from personal-digest.json ---
-  if (personalDigest?.overview?.length) {
-    const overviewLines = personalDigest.overview.map(
-      (o, i) => `${i + 1}. **${escapeMarkdown(o.topic)}**：${escapeMarkdown(o.summary)}`,
-    );
-    elements.push({
-      tag: "markdown",
-      content: `**📋 五分钟概览**\n\n${overviewLines.join("\n")}`,
-    });
+  // --- Five-minute brief from personal-digest.json ---
+  if (personalDigest?.fiveMinuteBrief?.topicGroups?.length) {
+    const eventMap = new Map<string, { title: string; quick: { what: string; why: string } }>();
+    for (const evt of personalDigest.events ?? []) {
+      eventMap.set(evt.id, { title: evt.title, quick: evt.quick });
+    }
+    const overviewLines: string[] = [];
+    let idx = 0;
+    for (const group of personalDigest.fiveMinuteBrief.topicGroups) {
+      for (const id of group.eventIds ?? []) {
+        const evt = eventMap.get(id);
+        if (!evt) continue;
+        idx++;
+        overviewLines.push(
+          `${idx}. **${escapeMarkdown(evt.title)}**\n   ${escapeMarkdown(evt.quick.what)} → ${escapeMarkdown(evt.quick.why)}`,
+        );
+      }
+    }
+    if (overviewLines.length) {
+      elements.push({
+        tag: "markdown",
+        content: `**📋 五分钟概览**\n\n${overviewLines.join("\n")}`,
+      });
+    }
   }
 
   // --- Tool status from personal-digest.json ---
@@ -271,13 +286,71 @@ function buildCard(ctx: CardContext): unknown {
 // Public API
 // ---------------------------------------------------------------------------
 
+export { buildCard };
+
+/**
+ * Generates feishu-card.json and feishu-preview.md from a PersonalReportJson.
+ * Used by both DRY_RUN and normal runs — single source of truth.
+ */
+export function generateFeishuArtifacts(
+  date: string,
+  reports: string[],
+  personalDigest: PersonalReportJson,
+  pagesUrl?: string,
+): { cardJson: string; previewMd: string } {
+  const PAGES_URL = (pagesUrl ?? SITE_PAGES_URL).replace(/\/$/, "");
+  const baseReports = reports.filter((r) => !r.endsWith("-en"));
+  const isMonthly = baseReports.includes("ai-monthly");
+  const isWeekly = baseReports.includes("ai-weekly");
+  const type = isMonthly ? "monthly" : isWeekly ? "weekly" : "daily";
+
+  const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
+  const cardJson = JSON.stringify(card, null, 2);
+
+  // Human-readable preview
+  const lines: string[] = [`# 飞书卡片预览 — ${date}`, "", "以下内容将发送到飞书群：", ""];
+  if (personalDigest.fiveMinuteBrief?.topicGroups?.length) {
+    const eventMap = new Map<string, { title: string; quick: { what: string; why: string } }>();
+    for (const evt of personalDigest.events ?? []) {
+      eventMap.set(evt.id, { title: evt.title, quick: evt.quick });
+    }
+    lines.push("**📋 五分钟概览**");
+    let idx = 0;
+    for (const group of personalDigest.fiveMinuteBrief.topicGroups) {
+      for (const id of group.eventIds ?? []) {
+        const evt = eventMap.get(id);
+        if (!evt) continue;
+        idx++;
+        lines.push(`${idx}. **${evt.title}**`);
+        lines.push(`   ${evt.quick.what} → ${evt.quick.why}`);
+      }
+    }
+    lines.push("");
+  } else {
+    lines.push("（无概览内容）", "");
+  }
+  if (personalDigest.toolStatus && Object.keys(personalDigest.toolStatus).length > 0) {
+    lines.push("**🔧 主力工具状态**");
+    for (const [tool, status] of Object.entries(personalDigest.toolStatus)) {
+      lines.push(`• **${tool}**：${status}`);
+    }
+    lines.push("");
+  }
+  lines.push("**📎 查看完整报告**");
+  for (const r of baseReports) {
+    lines.push(`• ${PAGES_URL}/#${date}/${r}`);
+  }
+
+  return { cardJson, previewMd: lines.join("\n") };
+}
+
 export function buildFeishuMessage(
   date: string,
   reports: string[],
   pagesUrl?: string,
   personalDigest?: PersonalReportJson | null,
 ): string {
-  const PAGES_URL = (pagesUrl ?? process.env["PAGES_URL"] ?? PAGES_URL_DEFAULT).replace(/\/$/, "");
+  const PAGES_URL = (pagesUrl ?? SITE_PAGES_URL).replace(/\/$/, "");
   const baseReports = reports.filter((r) => !r.endsWith("-en"));
   const isWeekly = baseReports.includes("ai-weekly");
   const isMonthly = baseReports.includes("ai-monthly");
@@ -286,12 +359,23 @@ export function buildFeishuMessage(
   const suffix = isMonthly ? " 月报" : isWeekly ? " 周报" : "";
   const lines: string[] = [`${icon} **agents-radar${suffix} · ${date}**`];
 
-  // Overview from personal-digest
-  if (personalDigest?.overview?.length) {
+  // Five-minute brief from personal-digest
+  if (personalDigest?.fiveMinuteBrief?.topicGroups?.length) {
+    const eventMap = new Map<string, { title: string; quick: { what: string; why: string } }>();
+    for (const evt of personalDigest.events ?? []) {
+      eventMap.set(evt.id, { title: evt.title, quick: evt.quick });
+    }
     lines.push("");
     lines.push("**📋 五分钟概览**");
-    for (const [i, o] of personalDigest.overview.entries()) {
-      lines.push(`${i + 1}. **${o.topic}**：${o.summary}`);
+    let idx = 0;
+    for (const group of personalDigest.fiveMinuteBrief.topicGroups) {
+      for (const id of group.eventIds ?? []) {
+        const evt = eventMap.get(id);
+        if (!evt) continue;
+        idx++;
+        lines.push(`${idx}. **${evt.title}**`);
+        lines.push(`   ${evt.quick.what} → ${evt.quick.why}`);
+      }
     }
   }
 
@@ -330,6 +414,130 @@ export function buildFeishuMessage(
 }
 
 // ---------------------------------------------------------------------------
+// Pre-send publication check
+// ---------------------------------------------------------------------------
+
+/**
+ * Verifies that the target date's ai-personal report is actually published
+ * on the public Pages site before allowing Feishu notification.
+ *
+ * Checks:
+ *  1. Remote manifest contains the target date with ai-personal
+ *  2. The ai-personal.md file returns HTTP 200
+ *
+ * Uses cache-busting query params and bounded retry to handle Pages deploy delay.
+ * Returns null on success, or an error message on final failure.
+ */
+export async function checkReportPublished(
+  pagesUrl: string,
+  date: string,
+  maxRetries = 6,
+  intervalMs = 10_000,
+): Promise<string | null> {
+  const base = pagesUrl.replace(/\/$/, "");
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const bust = Date.now();
+
+    // 1. Check manifest
+    try {
+      const res = await fetch(`${base}/manifest.json?_=${bust}`);
+      if (!res.ok) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `manifest.json 请求失败 (${res.status})`;
+      }
+      const { dates } = (await res.json()) as { dates: Array<{ date: string; reports: string[] }> };
+      const entry = dates?.find((d) => d.date === date);
+      if (!entry) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `线上 manifest 不包含 ${date}（重试 ${maxRetries} 次后）`;
+      }
+      if (!entry.reports.includes("ai-personal")) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `${date} 的线上 manifest 不包含 ai-personal（重试 ${maxRetries} 次后）`;
+      }
+    } catch (e) {
+      if (attempt < maxRetries) {
+        await delay(intervalMs);
+        continue;
+      }
+      return `manifest.json 请求异常: ${e instanceof Error ? e.message : String(e)}`;
+    }
+
+    // 2. Check ai-personal.md returns 200
+    try {
+      const res = await fetch(`${base}/digests/${date}/ai-personal.md?_=${bust}`);
+      if (!res.ok) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `ai-personal.md 请求失败 (${res.status})（重试 ${maxRetries} 次后）`;
+      }
+    } catch (e) {
+      if (attempt < maxRetries) {
+        await delay(intervalMs);
+        continue;
+      }
+      return `ai-personal.md 请求异常: ${e instanceof Error ? e.message : String(e)}`;
+    }
+
+    return null; // success
+  }
+
+  return `发布检查超时（重试 ${maxRetries} 次）`;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---------------------------------------------------------------------------
+// Manifest validation — pure, no side effects
+// ---------------------------------------------------------------------------
+
+export interface ManifestEntry {
+  date: string;
+  reports: string[];
+}
+
+export interface ManifestValidationResult {
+  ok: boolean;
+  entry?: ManifestEntry;
+  error?: string;
+}
+
+/**
+ * Validates that the manifest contains the target date with ai-personal.
+ * Pure function — no file I/O, no process.exit.
+ */
+export function validateManifestEntry(
+  dates: ManifestEntry[] | null | undefined,
+  reportDate: string,
+): ManifestValidationResult {
+  if (!dates || !Array.isArray(dates) || dates.length === 0) {
+    return { ok: false, error: "manifest is empty or invalid" };
+  }
+  const entry = dates.find((d) => d.date === reportDate);
+  if (!entry) {
+    return { ok: false, error: `${reportDate} not in manifest` };
+  }
+  if (!entry.reports || !entry.reports.includes("ai-personal")) {
+    return { ok: false, error: `${reportDate} manifest entry does not include ai-personal` };
+  }
+  return { ok: true, entry };
+}
+
+// ---------------------------------------------------------------------------
 // Main — only runs when executed directly (tsx src/feishu.ts)
 // ---------------------------------------------------------------------------
 
@@ -342,31 +550,48 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Explicit REPORT_DATE — do not guess from manifest
+  const reportDate = process.env["REPORT_DATE"] ?? "";
+  if (!reportDate) {
+    console.error("[feishu] REPORT_DATE not set — refusing to send without explicit date.");
+    process.exit(1);
+  }
+
   if (!fs.existsSync("manifest.json")) {
-    console.log("[feishu] manifest.json not found — skipping.");
-    return;
+    console.error("[feishu] manifest.json not found — refusing to send.");
+    process.exit(1);
   }
 
   const { dates } = JSON.parse(fs.readFileSync("manifest.json", "utf-8")) as {
-    dates: { date: string; reports: string[] }[];
+    dates: ManifestEntry[];
   };
 
-  const latest = dates?.[0];
-  if (!latest) {
-    console.log("[feishu] manifest is empty — skipping.");
-    return;
+  const manifestResult = validateManifestEntry(dates, reportDate);
+  if (!manifestResult.ok) {
+    console.error(`[feishu] ${manifestResult.error} — refusing to send.`);
+    process.exit(1);
   }
-  const { date, reports } = latest;
+  const { date, reports } = manifestResult.entry!;
 
-  // Load personal-digest.json (the single source of truth for Feishu)
+  // Load and validate personal-digest.json
   let personalDigest: PersonalReportJson | null = null;
   const digestPath = path.join("digests", date, "personal-digest.json");
   if (fs.existsSync(digestPath)) {
     try {
-      personalDigest = JSON.parse(fs.readFileSync(digestPath, "utf-8")) as PersonalReportJson;
+      const raw = JSON.parse(fs.readFileSync(digestPath, "utf-8"));
+      const schemaError = guardReportSchema(raw);
+      if (schemaError) {
+        console.error(`[feishu] personal-digest.json schema invalid: ${schemaError} — refusing to send.`);
+        process.exit(1);
+      }
+      personalDigest = raw as PersonalReportJson;
     } catch {
-      console.log("[feishu] Failed to parse personal-digest.json — sending without content.");
+      console.error("[feishu] Failed to parse personal-digest.json — refusing to send.");
+      process.exit(1);
     }
+  } else {
+    console.error("[feishu] personal-digest.json not found — refusing to send.");
+    process.exit(1);
   }
 
   // Determine report type
@@ -375,9 +600,7 @@ async function main(): Promise<void> {
   const isWeekly = baseReports.includes("ai-weekly");
   const type = isMonthly ? "monthly" : isWeekly ? "weekly" : "daily";
 
-  const PAGES_URL = (process.env["PAGES_URL"] ?? PAGES_URL_DEFAULT).replace(/\/$/, "");
-
-  const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
+  const PAGES_URL = SITE_PAGES_URL;
 
   // Dedup check: skip if already sent for this date unless FORCE_SEND=true
   const sendKey = makeSendKey(type, date);
@@ -385,9 +608,20 @@ async function main(): Promise<void> {
   const forceSend = process.env["FORCE_SEND"] === "true";
 
   if (notifState.sent[sendKey] && !forceSend) {
-    console.log(`[feishu] Already sent ${sendKey} at ${notifState.sent[sendKey]} — skipping. Use FORCE_SEND=true to resend.`);
+    console.log(
+      `[feishu] Already sent ${sendKey} at ${notifState.sent[sendKey]} — skipping. Use FORCE_SEND=true to resend.`,
+    );
     return;
   }
+
+  // Pre-send publication check with retry
+  const publishCheck = await checkReportPublished(PAGES_URL, date);
+  if (publishCheck) {
+    console.error(`[feishu] 发送前检查失败: ${publishCheck} — 拒绝发送。`);
+    process.exit(1);
+  }
+
+  const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
 
   const mode = hasApp ? "Open API" : `${webhooks.length} webhook(s)`;
   console.log(`[feishu] Sending ${type} card to ${mode} for ${date} (${reports.length} reports)…`);

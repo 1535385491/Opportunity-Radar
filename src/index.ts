@@ -19,7 +19,7 @@ import {
   fetchSkillsData,
   createGitHubIssue,
 } from "./github.ts";
-import { saveFile } from "./report.ts";
+import { saveFile, setDryRunMode } from "./report.ts";
 import { loadWebState, fetchSiteContent, saveWebState, type WebFetchResult, type WebState } from "./web.ts";
 import { fetchTrendingData, type TrendingData, type TrendingSnapshot } from "./trending.ts";
 import { fetchHnData, type HnData } from "./hn.ts";
@@ -52,9 +52,11 @@ import {
   generatePersonalReport,
   extractTrendingSnapshot,
   extractHfSnapshot,
+  guardReportSchema,
   type CandidateItem,
   type PersonalReportJson,
 } from "./personal-report.ts";
+import { generateFeishuArtifacts } from "./feishu.ts";
 
 // ---------------------------------------------------------------------------
 // Repo config — loaded from config.yml, falls back to built-in defaults
@@ -174,7 +176,9 @@ async function fetchAllData(
     fetchHnData(since).catch((): HnData => ({ stories: [], fetchSuccess: false })),
     fetchPhData(since).catch((): PhData => ({ products: [], fetchSuccess: false })),
     fetchArxivData(since).catch((): ArxivData => ({ papers: [], fetchSuccess: false })),
-    fetchHfData(prevHf).catch((): HfData => ({ models: [], fetchSuccess: false, snapshotMarkers: { modelIds: [], likeCounts: {} } })),
+    fetchHfData(prevHf).catch(
+      (): HfData => ({ models: [], fetchSuccess: false, snapshotMarkers: { modelIds: [], likeCounts: {} } }),
+    ),
     fetchDevtoData(since).catch((): DevtoData => ({ articles: [], fetchSuccess: false })),
     fetchLobstersData(since).catch((): LobstersData => ({ stories: [], fetchSuccess: false })),
   ]);
@@ -278,34 +282,37 @@ function buildSourceResults(
 // Phase 3: Generate highlights + opportunity card from report JSON
 // ---------------------------------------------------------------------------
 
-function generateHighlightsFromJson(
-  report: PersonalReportJson,
-): Record<string, string[]> {
-  const highlights: Record<string, string[]> = {
-    "ai-personal": (report.overview ?? []).map((o) => `${o.topic}：${o.summary}`),
+function generateHighlightsFromJson(report: PersonalReportJson): Record<string, string[]> {
+  const eventMap = new Map<string, (typeof report.events)[0]>();
+  for (const evt of report.events ?? []) eventMap.set(evt.id, evt);
+
+  const fiveMinuteIds: string[] = [];
+  for (const group of report.fiveMinuteBrief?.topicGroups ?? []) {
+    for (const id of group.eventIds ?? []) fiveMinuteIds.push(id);
+  }
+
+  return {
+    "ai-personal": fiveMinuteIds
+      .map((id) => eventMap.get(id))
+      .filter(Boolean)
+      .map((evt) => `${evt!.title}：${evt!.quick.what}`),
   };
-  return highlights;
 }
 
-function generateOpportunityFromJson(
-  report: PersonalReportJson,
-): { summary: string; signals: Array<{ title: string; description: string; report: string }> } {
-  // Extract actionable items from topics
+function generateOpportunityFromJson(report: PersonalReportJson): {
+  summary: string;
+  signals: Array<{ title: string; description: string; report: string }>;
+} {
   const signals: Array<{ title: string; description: string; report: string }> = [];
-  for (const topic of report.topics ?? []) {
-    for (const item of topic.items ?? []) {
-      if (item.action) {
-        signals.push({
-          title: item.title,
-          description: item.action,
-          report: `ai-personal`,
-        });
-      }
+  for (const evt of report.events ?? []) {
+    const action = evt.quick.action || evt.full.action;
+    if (action) {
+      signals.push({ title: evt.title, description: action, report: "ai-personal" });
     }
   }
-  const firstOverview = report.overview?.[0];
+  const firstEvt = (report.events ?? [])[0];
   return {
-    summary: firstOverview ? `${firstOverview.topic}：${firstOverview.summary}` : "",
+    summary: firstEvt ? `${firstEvt.title}：${firstEvt.quick.what}` : "",
     signals: signals.slice(0, 5),
   };
 }
@@ -320,9 +327,15 @@ async function main(): Promise<string> {
   const now = new Date();
   const dateStr = toCstDateStr(now);
   const digestRepo = process.env["DIGEST_REPO"] ?? "";
+  const isDryRun = process.env["DRY_RUN"] === "true";
 
   const providerName = process.env["LLM_PROVIDER"] ?? "anthropic";
-  console.log(`[${now.toISOString()}] Starting personal digest | provider: ${providerName}`);
+  console.log(
+    `[${now.toISOString()}] Starting personal digest | provider: ${providerName}${isDryRun ? " | DRY_RUN" : ""}`,
+  );
+
+  // Enable dry-run mode: writes go to preview-<date> directory
+  if (isDryRun) setDryRunMode(true);
 
   // 1. Load state and calculate collection window
   const prevState = loadReportState();
@@ -333,8 +346,8 @@ async function main(): Promise<string> {
   console.log(`  Previous report: ${prevState?.lastReportDate ?? "none"}`);
   console.log(`  Collection window since: ${since}`);
 
-  // Same-day re-run detection
-  if (checkSameDay(prevState, dateStr) && process.env["DRY_RUN"] !== "true") {
+  // Same-day re-run detection (skip for dry-run)
+  if (checkSameDay(prevState, dateStr) && !isDryRun) {
     console.log(`  Report for ${dateStr} already exists — skipping.`);
     return "skipped-same-day";
   }
@@ -395,34 +408,49 @@ async function main(): Promise<string> {
     return "failed";
   }
 
-  // 6. Update report state with per-source tracking
-  const sourceResults = buildSourceResults(
-    fetched,
-    webResults,
-    trendingData,
-    hnData,
-    phData,
-    arxivData,
-    hfData,
-    devtoData,
-    lobstersData,
-  );
-  const newState = updateStateAfterSuccess(prevState, dateStr, now);
-  newState.sources = updateSourceStates(prevState, sourceResults, now);
-  // Persist snapshot markers — only update if fetch succeeded, preserve old on failure
-  const newSnapshots: Record<string, unknown> = { ...prevState?.snapshotMarkers };
-  if (trendingData.trendingFetchSuccess) {
-    newSnapshots["trending"] = extractTrendingSnapshot(trendingData);
+  // 5b. Runtime schema validation — reject old summary schema
+  const schemaError = guardReportSchema(reportResult.json);
+  if (schemaError) {
+    console.error(`  [SCHEMA] personal-digest.json invalid: ${schemaError} — aborting.`);
+    process.exitCode = 1;
+    return "failed";
   }
-  if (hfData.fetchSuccess) {
-    newSnapshots["hf"] = extractHfSnapshot(hfData);
-  }
-  newState.snapshotMarkers = newSnapshots;
-  saveReportState(newState);
-  console.log(`  Updated report state: lastSuccessfulAt=${newState.lastSuccessfulAt}`);
 
-  // 7. Save web state
-  saveWebState(webState);
+  // 6. Update report state with per-source tracking (skip in dry-run)
+  if (!isDryRun) {
+    const sourceResults = buildSourceResults(
+      fetched,
+      webResults,
+      trendingData,
+      hnData,
+      phData,
+      arxivData,
+      hfData,
+      devtoData,
+      lobstersData,
+    );
+    const newState = updateStateAfterSuccess(prevState, dateStr, now);
+    newState.sources = updateSourceStates(prevState, sourceResults, now);
+    const newSnapshots: Record<string, unknown> = { ...prevState?.snapshotMarkers };
+    if (trendingData.trendingFetchSuccess) {
+      newSnapshots["trending"] = extractTrendingSnapshot(trendingData);
+    }
+    if (hfData.fetchSuccess) {
+      newSnapshots["hf"] = extractHfSnapshot(hfData);
+    }
+    newState.snapshotMarkers = newSnapshots;
+    saveReportState(newState);
+    console.log(`  Updated report state: lastSuccessfulAt=${newState.lastSuccessfulAt}`);
+  } else {
+    console.log("  [DRY_RUN] Skipping report state update.");
+  }
+
+  // 7. Save web state (skip in dry-run)
+  if (!isDryRun) {
+    saveWebState(webState);
+  } else {
+    console.log("  [DRY_RUN] Skipping web state update.");
+  }
 
   // 8. Generate highlights + opportunity card from JSON (backward compat)
   const highlights = generateHighlightsFromJson(reportResult.json);
@@ -433,14 +461,29 @@ async function main(): Promise<string> {
   const oppPath = saveFile(JSON.stringify(oppCard, null, 2), dateStr, "opportunity-card.json");
   console.log(`  Saved ${oppPath}`);
 
-  // 9. Create GitHub Issue (optional)
-  if (digestRepo) {
+  // 8b. Generate feishu artifacts from same JSON — single source of truth
+  const reportTypes = ["ai-personal"];
+  const feishuArtifacts = generateFeishuArtifacts(dateStr, reportTypes, reportResult.json);
+  const feishuCardPath = saveFile(feishuArtifacts.cardJson, dateStr, "feishu-card.json");
+  console.log(`  Saved ${feishuCardPath}`);
+  const feishuPreviewPath = saveFile(feishuArtifacts.previewMd, dateStr, "feishu-preview.md");
+  console.log(`  Saved ${feishuPreviewPath}`);
+
+  // 9. Create GitHub Issue (skip in dry-run)
+  if (digestRepo && !isDryRun) {
     const issueTitle = `AI 前沿个人简报 ${dateStr}`;
     const issueUrl = await createGitHubIssue(issueTitle, reportResult.markdown, "digest");
     console.log(`  Created issue: ${issueUrl}`);
+  } else if (isDryRun) {
+    console.log("  [DRY_RUN] Skipping GitHub issue creation.");
   }
 
-  const isNoUpdate = reportResult.json.topics.length === 0;
+  if (isDryRun) {
+    console.log(`  [DRY_RUN] Preview files written to digests/preview-${dateStr}/`);
+    console.log(`  [DRY_RUN] 预览地址: http://localhost:8080/?preview=${dateStr}`);
+  }
+
+  const isNoUpdate = (reportResult.json.events ?? []).length === 0;
   console.log("Done!");
   return isNoUpdate ? "no-important-updates" : "generated";
 }

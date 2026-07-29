@@ -1,5 +1,6 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { buildFeishuMessage, makeSendKey } from "../feishu.ts";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import { buildFeishuMessage, makeSendKey, checkReportPublished, validateManifestEntry } from "../feishu.ts";
+import type { ManifestEntry } from "../feishu.ts";
 import type { PersonalReportJson } from "../personal-report.ts";
 
 const BASE_URL = "https://example.com/radar";
@@ -12,33 +13,60 @@ const SAMPLE_DIGEST: PersonalReportJson = {
   generatedAt: "2026-07-27T08:00:00Z",
   coverageFrom: "2026-07-23T08:00:00Z",
   coverageTo: "2026-07-27T08:00:00Z",
-  overview: [
-    { id: "evt-1", topic: "Claude Code 新功能", summary: "新增长期记忆功能" },
-    { id: "evt-2", topic: "Codex 稳定性", summary: "Windows 冻结问题" },
-  ],
   toolStatus: {
     codex: "Windows 冻结问题仍未解决",
     "claude-code": "新增记忆功能，建议升级",
   },
-  topics: [
+  events: [
     {
-      name: "主力工具更新",
-      items: [
-        {
-          id: "evt-1",
-          candidateIds: ["https://github.com/anthropics/claude-code/pull/123"],
-          title: "Claude Code 新增长期记忆功能",
-          eventTime: "2026-07-27T08:00:00Z",
-          updateKind: "new",
-          what: "新增跨会话记忆功能",
-          why: "减少重复上下文输入",
-          impact: "提高开发效率",
-          status: "已确认",
-          sources: [{ name: "GitHub", url: "https://github.com/anthropics/claude-code/pull/123" }],
-        },
-      ],
+      id: "evt-1",
+      title: "Claude Code 新增长期记忆功能",
+      topic: "Claude Code 新功能",
+      eventTime: "2026-07-27T08:00:00Z",
+      updateKind: "new",
+      status: "已确认",
+      quick: { what: "新增长期记忆功能", why: "减少重复上下文输入", impact: "提高开发效率" },
+      full: {
+        background: "长期上下文管理",
+        evidence: "GitHub PR",
+        analysis: "跨会话持久化",
+        impact: "提高开发效率",
+        action: "升级使用",
+      },
+      candidateIds: ["https://github.com/anthropics/claude-code/pull/123"],
+      sources: [{ name: "GitHub", url: "https://github.com/anthropics/claude-code/pull/123" }],
+    },
+    {
+      id: "evt-2",
+      title: "Codex Windows 冻结问题",
+      topic: "Codex 稳定性",
+      eventTime: "2026-07-27T08:00:00Z",
+      updateKind: "updated",
+      status: "社区信号",
+      quick: { what: "Windows 冻结问题仍未修复", why: "影响 Windows 用户日常使用", impact: "影响工作流" },
+      full: {
+        background: "Codex Windows 特定问题",
+        evidence: "GitHub Issue",
+        analysis: "UI 线程阻塞",
+        impact: "影响 Windows 用户工作流",
+        action: "关注修复进展",
+      },
+      candidateIds: ["https://github.com/openai/codex/issues/456"],
+      sources: [{ name: "GitHub", url: "https://github.com/openai/codex/issues/456" }],
     },
   ],
+  fiveMinuteBrief: {
+    topicGroups: [
+      { name: "Claude Code 新功能", eventIds: ["evt-1"] },
+      { name: "Codex 稳定性", eventIds: ["evt-2"] },
+    ],
+  },
+  fullReport: {
+    topicGroups: [
+      { name: "Claude Code 新功能", eventIds: ["evt-1"] },
+      { name: "Codex 稳定性", eventIds: ["evt-2"] },
+    ],
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -110,26 +138,17 @@ describe("buildFeishuMessage", () => {
 
   // --- New: overview and toolStatus from personal-digest.json ---
 
-  it("displays overview from personal-digest.json", () => {
-    const msg = buildFeishuMessage(
-      "2026-07-27",
-      ["ai-personal"],
-      BASE_URL,
-      SAMPLE_DIGEST,
-    );
+  it("displays fiveMinuteBrief from personal-digest.json", () => {
+    const msg = buildFeishuMessage("2026-07-27", ["ai-personal"], BASE_URL, SAMPLE_DIGEST);
     expect(msg).toContain("五分钟概览");
-    expect(msg).toContain("Claude Code 新功能");
+    expect(msg).toContain("Claude Code 新增长期记忆功能");
     expect(msg).toContain("新增长期记忆功能");
-    expect(msg).toContain("Codex 稳定性");
+    expect(msg).toContain("减少重复上下文输入");
+    expect(msg).toContain("Codex Windows 冻结问题");
   });
 
   it("displays toolStatus from personal-digest.json", () => {
-    const msg = buildFeishuMessage(
-      "2026-07-27",
-      ["ai-personal"],
-      BASE_URL,
-      SAMPLE_DIGEST,
-    );
+    const msg = buildFeishuMessage("2026-07-27", ["ai-personal"], BASE_URL, SAMPLE_DIGEST);
     expect(msg).toContain("主力工具状态");
     expect(msg).toContain("codex");
     expect(msg).toContain("Windows 冻结问题仍未解决");
@@ -138,23 +157,15 @@ describe("buildFeishuMessage", () => {
   });
 
   it("has exactly one report entry link", () => {
-    const msg = buildFeishuMessage(
-      "2026-07-27",
-      ["ai-personal"],
-      BASE_URL,
-      SAMPLE_DIGEST,
+    const msg = buildFeishuMessage("2026-07-27", ["ai-personal"], BASE_URL, SAMPLE_DIGEST);
+    const reportLinkPattern = new RegExp(
+      `\\]\\(${BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/#2026-07-27/ai-personal\\)`,
     );
-    const reportLinkPattern = new RegExp(`\\]\\(${BASE_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/#2026-07-27/ai-personal\\)`);
     expect(msg).toMatch(reportLinkPattern);
   });
 
   it("does not include the old opportunity section", () => {
-    const msg = buildFeishuMessage(
-      "2026-07-27",
-      ["ai-personal"],
-      BASE_URL,
-      SAMPLE_DIGEST,
-    );
+    const msg = buildFeishuMessage("2026-07-27", ["ai-personal"], BASE_URL, SAMPLE_DIGEST);
     expect(msg).not.toContain("值得关注的机会");
     expect(msg).not.toContain("今日一句话");
   });
@@ -181,5 +192,199 @@ describe("makeSendKey", () => {
 
   it("distinguishes dates", () => {
     expect(makeSendKey("daily", "2026-07-27")).not.toBe(makeSendKey("daily", "2026-07-28"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkReportPublished — pre-send publication verification
+// ---------------------------------------------------------------------------
+
+describe("checkReportPublished", () => {
+  const origFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = origFetch;
+  });
+
+  it("returns null when manifest contains date and md returns 200", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("manifest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ dates: [{ date: "2026-07-27", reports: ["ai-personal"] }] }),
+        });
+      }
+      if (url.includes("ai-personal.md")) {
+        return Promise.resolve({ ok: true });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
+
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 1, 0);
+    expect(result).toBeNull();
+  });
+
+  it("returns error when manifest does not contain the date", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("manifest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ dates: [{ date: "2026-07-26", reports: ["ai-personal"] }] }),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
+
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 1, 0);
+    expect(result).toContain("不包含 2026-07-27");
+  });
+
+  it("returns error when manifest date lacks ai-personal", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("manifest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ dates: [{ date: "2026-07-27", reports: ["ai-cli"] }] }),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
+
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 1, 0);
+    expect(result).toContain("不包含 ai-personal");
+  });
+
+  it("returns error when ai-personal.md returns non-200", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("manifest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ dates: [{ date: "2026-07-27", reports: ["ai-personal"] }] }),
+        });
+      }
+      if (url.includes("ai-personal.md")) {
+        return Promise.resolve({ ok: false, status: 404 });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
+
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 1, 0);
+    expect(result).toContain("ai-personal.md");
+    expect(result).toContain("404");
+  });
+
+  it("returns error when manifest fetch fails", async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error("network error"));
+
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 1, 0);
+    expect(result).toContain("异常");
+  });
+
+  it("retries on failure and succeeds on second attempt", async () => {
+    let callCount = 0;
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      callCount++;
+      if (url.includes("manifest.json")) {
+        if (callCount <= 2) return Promise.resolve({ ok: false, status: 404 });
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ dates: [{ date: "2026-07-27", reports: ["ai-personal"] }] }),
+        });
+      }
+      if (url.includes("ai-personal.md")) {
+        return Promise.resolve({ ok: true });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
+
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 3, 0);
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Events structure — quick.what + quick.why rendered in message
+// ---------------------------------------------------------------------------
+
+describe("events structure", () => {
+  it("renders quick.what and quick.why in the message", () => {
+    const msg = buildFeishuMessage("2026-07-27", ["ai-personal"], BASE_URL, SAMPLE_DIGEST);
+    // Each fiveMinuteBrief event should have title, quick.what, and quick.why
+    expect(msg).toContain("Claude Code 新增长期记忆功能");
+    expect(msg).toContain("新增长期记忆功能");
+    expect(msg).toContain("减少重复上下文输入");
+    expect(msg).toContain("→");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateManifestEntry — pure, no side effects
+// ---------------------------------------------------------------------------
+
+describe("validateManifestEntry", () => {
+  it("returns error when dates is null", () => {
+    const result = validateManifestEntry(null, "2026-07-27");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("empty");
+  });
+
+  it("returns error when dates is empty array", () => {
+    const result = validateManifestEntry([], "2026-07-27");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("empty");
+  });
+
+  it("returns error when target date not in manifest", () => {
+    const dates: ManifestEntry[] = [{ date: "2026-07-26", reports: ["ai-personal"] }];
+    const result = validateManifestEntry(dates, "2026-07-27");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("not in manifest");
+  });
+
+  it("returns error when date exists but no ai-personal", () => {
+    const dates: ManifestEntry[] = [{ date: "2026-07-27", reports: ["ai-cli"] }];
+    const result = validateManifestEntry(dates, "2026-07-27");
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("ai-personal");
+  });
+
+  it("returns entry when date exists with ai-personal", () => {
+    const dates: ManifestEntry[] = [{ date: "2026-07-27", reports: ["ai-personal", "ai-cli"] }];
+    const result = validateManifestEntry(dates, "2026-07-27");
+    expect(result.ok).toBe(true);
+    expect(result.entry!.date).toBe("2026-07-27");
+    expect(result.entry!.reports).toContain("ai-personal");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Workflow REPORT_DATE static check
+// ---------------------------------------------------------------------------
+
+describe("workflow REPORT_DATE", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require("node:fs") as typeof import("node:fs");
+  let workflowContent: string;
+
+  try {
+    workflowContent = fs.readFileSync(".github/workflows/daily-digest.yml", "utf-8");
+  } catch {
+    workflowContent = "";
+  }
+
+  it("uses TZ=Asia/Shanghai for date computation", () => {
+    expect(workflowContent).toContain("TZ=Asia/Shanghai date +%Y-%m-%d");
+  });
+
+  it("feishu step references steps.date.outputs.REPORT_DATE", () => {
+    expect(workflowContent).toContain("steps.date.outputs.REPORT_DATE");
+  });
+
+  it("does not contain UTC date -u", () => {
+    expect(workflowContent).not.toContain("date -u +%Y-%m-%d");
+  });
+
+  it("does not contain the old empty schedule expression", () => {
+    expect(workflowContent).not.toContain("github.event.schedule == '' && '' || ''");
   });
 });

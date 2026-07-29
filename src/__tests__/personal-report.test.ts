@@ -23,6 +23,8 @@ import {
   buildCandidateUrlSet,
   validateReport,
   generateNoUpdateReport,
+  renderPersonalReportMarkdown,
+  capFilterResult,
   CATEGORY_LIMITS,
 } from "../personal-report.ts";
 import type { CandidateItem, MergedCandidate, FilterResult, PersonalReportJson } from "../personal-report.ts";
@@ -39,6 +41,12 @@ const DEFAULT_CONFIG: PersonalReportConfig = {
   usageContext: "个人项目开发",
   focusTopics: ["上下文与记忆", "Agent 能力"],
   excludedTopics: ["纯 UI 细节"],
+  secondaryTopics: ["GraphRAG 与知识图谱"],
+  usesAnthropicAccount: false,
+  usesAnthropicSubscription: false,
+  modelBackend: "mimo",
+  fiveMinuteLimit: 6,
+  fullReportLimit: 16,
   overviewLimit: 8,
   detailLimit: 20,
   commercialMode: "exceptional_only",
@@ -444,7 +452,13 @@ describe("buildBalancedPool", () => {
       makeCandidate({ id: "a2", sourceName: "GitHub", subject: "Codex", sourceUrl: "https://gh/a2" }),
       makeCandidate({ id: "a3", sourceName: "GitHub", subject: "Codex", sourceUrl: "https://gh/a3" }),
       makeCandidate({ id: "b1", sourceName: "Hacker News", sourceUrl: "https://hn/b1", subject: "HN" }),
-      makeCandidate({ id: "c1", sourceName: "ArXiv", sourceUrl: "https://arxiv/c1", subject: "Research", infoType: "paper" }),
+      makeCandidate({
+        id: "c1",
+        sourceName: "ArXiv",
+        sourceUrl: "https://arxiv/c1",
+        subject: "Research",
+        infoType: "paper",
+      }),
     ];
 
     const pool = buildBalancedPool(sources, DEFAULT_CONFIG);
@@ -613,27 +627,33 @@ describe("validateReport", () => {
     generatedAt: "2026-07-27T08:00:00Z",
     coverageFrom: "2026-07-23T08:00:00Z",
     coverageTo: "2026-07-27T08:00:00Z",
-    overview: [{ id: "evt-1", topic: "Test", summary: "Summary" }],
     toolStatus: { codex: "ok", "claude-code": "ok" },
-    topics: [
+    events: [
       {
-        name: "Topic 1",
-        items: [
-          {
-            id: "evt-1",
-            candidateIds: ["https://example.com/1"],
-            title: "Item 1",
-            eventTime: "2026-07-27T08:00:00Z",
-            updateKind: "new",
-            what: "what",
-            why: "why",
-            impact: "impact",
-            status: "已确认",
-            sources: [{ name: "GitHub", url: "https://example.com/1" }],
-          },
-        ],
+        id: "evt-1",
+        title: "Item 1",
+        topic: "Topic 1",
+        eventTime: "2026-07-27T08:00:00Z",
+        updateKind: "new",
+        status: "已确认",
+        quick: { what: "Something happened", why: "It affects you", impact: "High impact" },
+        full: {
+          background: "Context info",
+          evidence: "Release notes",
+          analysis: "Technical details",
+          impact: "Significant change",
+          action: "Upgrade now",
+        },
+        candidateIds: ["https://example.com/1"],
+        sources: [{ name: "GitHub", url: "https://example.com/1" }],
       },
     ],
+    fiveMinuteBrief: {
+      topicGroups: [{ name: "Topic 1", eventIds: ["evt-1"] }],
+    },
+    fullReport: {
+      topicGroups: [{ name: "Topic 1", eventIds: ["evt-1"] }],
+    },
   };
 
   const VALID_URLS = new Set(["https://example.com/1"]);
@@ -646,7 +666,7 @@ describe("validateReport", () => {
 
   it("rejects fabricated URLs", () => {
     const json = structuredClone(VALID_JSON);
-    json.topics[0]!.items[0]!.sources = [{ name: "Fake", url: "https://fake-url.com/1" }];
+    json.events[0]!.sources = [{ name: "Fake", url: "https://fake-url.com/1" }];
     const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.code === "FABRICATED_URL")).toBe(true);
@@ -654,7 +674,7 @@ describe("validateReport", () => {
 
   it("rejects missing eventTime", () => {
     const json = structuredClone(VALID_JSON);
-    json.topics[0]!.items[0]!.eventTime = "";
+    json.events[0]!.eventTime = "";
     const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.code === "MISSING_EVENT_TIME")).toBe(true);
@@ -662,7 +682,7 @@ describe("validateReport", () => {
 
   it("rejects zero eventTime", () => {
     const json = structuredClone(VALID_JSON);
-    json.topics[0]!.items[0]!.eventTime = "0";
+    json.events[0]!.eventTime = "0";
     const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.code === "MISSING_EVENT_TIME")).toBe(true);
@@ -670,7 +690,7 @@ describe("validateReport", () => {
 
   it("rejects invalid status", () => {
     const json = structuredClone(VALID_JSON);
-    json.topics[0]!.items[0]!.status = "invalid" as "已确认";
+    json.events[0]!.status = "invalid" as "已确认";
     const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.code === "INVALID_STATUS")).toBe(true);
@@ -678,54 +698,70 @@ describe("validateReport", () => {
 
   it("rejects invalid updateKind", () => {
     const json = structuredClone(VALID_JSON);
-    json.topics[0]!.items[0]!.updateKind = "invalid" as "new";
+    json.events[0]!.updateKind = "invalid" as "new";
     const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.code === "INVALID_UPDATE_KIND")).toBe(true);
   });
 
-  it("rejects when overview exceeds limit", () => {
+  it("rejects when fiveMinuteBrief exceeds limit", () => {
     const json = structuredClone(VALID_JSON);
-    json.overview = Array.from({ length: 20 }, (_, i) => ({
-      id: `evt-${i}`,
-      topic: `Topic ${i}`,
-      summary: `Summary ${i}`,
-    }));
-    const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
-    expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.code === "OVERVIEW_OVER_LIMIT")).toBe(true);
-  });
-
-  it("rejects when details exceed limit", () => {
-    const json = structuredClone(VALID_JSON);
-    json.topics = [
-      {
-        name: "Big Topic",
-        items: Array.from({ length: 25 }, (_, i) => ({
-          id: `evt-${i}`,
-          candidateIds: ["https://example.com/1"],
-          title: `Item ${i}`,
-          eventTime: "2026-07-27T08:00:00Z",
-          updateKind: "new" as const,
-          what: "what",
-          why: "why",
-          impact: "impact",
-          status: "已确认" as const,
-          sources: [{ name: "GitHub", url: "https://example.com/1" }],
-        })),
+    const lowLimitConfig = { ...DEFAULT_CONFIG, fiveMinuteLimit: 1 };
+    // Add more events than the limit allows
+    json.events.push({
+      id: "evt-2",
+      title: "Item 2",
+      topic: "Topic 2",
+      eventTime: "2026-07-27T09:00:00Z",
+      updateKind: "new",
+      status: "已确认",
+      quick: { what: "Another thing", why: "Also matters", impact: "Medium impact" },
+      full: {
+        background: "Context",
+        evidence: "Source",
+        analysis: "Details",
+        impact: "Some change",
+        action: "Monitor",
       },
-    ];
-    const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
+      candidateIds: ["https://example.com/2"],
+      sources: [{ name: "GitHub", url: "https://example.com/2" }],
+    });
+    const validUrls = new Set(["https://example.com/1", "https://example.com/2"]);
+    json.fiveMinuteBrief = {
+      topicGroups: [
+        { name: "Topic 1", eventIds: ["evt-1"] },
+        { name: "Topic 2", eventIds: ["evt-2"] },
+      ],
+    };
+    json.fullReport = {
+      topicGroups: [
+        { name: "Topic 1", eventIds: ["evt-1"] },
+        { name: "Topic 2", eventIds: ["evt-2"] },
+      ],
+    };
+    const result = validateReport(json, lowLimitConfig, validUrls);
     expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.code === "DETAILS_OVER_LIMIT")).toBe(true);
+    expect(result.errors.some((e) => e.code === "FIVE_MINUTE_OVER_LIMIT")).toBe(true);
   });
 
-  it("rejects when overview references non-existent item", () => {
+  it("rejects when fullReport references non-existent event", () => {
     const json = structuredClone(VALID_JSON);
-    json.overview = [{ id: "evt-nonexistent", topic: "X", summary: "Y" }];
+    json.fullReport = {
+      topicGroups: [{ name: "Ghost Topic", eventIds: ["evt-nonexistent"] }],
+    };
     const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
     expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => e.code === "OVERVIEW_REF_MISSING")).toBe(true);
+    expect(result.errors.some((e) => e.code === "FULL_REPORT_EVENT_MISSING")).toBe(true);
+  });
+
+  it("rejects when fiveMinuteBrief references non-existent event", () => {
+    const json = structuredClone(VALID_JSON);
+    json.fiveMinuteBrief = {
+      topicGroups: [{ name: "Ghost Topic", eventIds: ["evt-nonexistent"] }],
+    };
+    const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "FIVE_MINUTE_EVENT_MISSING")).toBe(true);
   });
 
   it("rejects when toolStatus missing primary tool", () => {
@@ -738,7 +774,7 @@ describe("validateReport", () => {
 
   it("rejects missing candidateIds", () => {
     const json = structuredClone(VALID_JSON);
-    json.topics[0]!.items[0]!.candidateIds = [];
+    json.events[0]!.candidateIds = [];
     const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.code === "MISSING_CANDIDATE_IDS")).toBe(true);
@@ -768,7 +804,7 @@ describe("buildCandidateUrlSet", () => {
 // ---------------------------------------------------------------------------
 
 describe("generateNoUpdateReport", () => {
-  it("generates report with empty topics and toolStatus for all primary tools", () => {
+  it("generates report with empty events and toolStatus for all primary tools", () => {
     const { json } = generateNoUpdateReport(
       DEFAULT_CONFIG,
       "2026-07-23T00:00:00Z",
@@ -776,9 +812,371 @@ describe("generateNoUpdateReport", () => {
       "2026-07-27",
       "zh",
     );
-    expect(json.topics).toHaveLength(0);
-    expect(json.overview).toHaveLength(0);
+    expect(json.events).toHaveLength(0);
+    expect(json.fiveMinuteBrief.topicGroups).toHaveLength(0);
+    expect(json.fullReport.topicGroups).toHaveLength(0);
     expect(json.toolStatus["codex"]).toBe("本期无重要更新");
     expect(json.toolStatus["claude-code"]).toBe("本期无重要更新");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Events structure — quick.what + quick.why fields
+// ---------------------------------------------------------------------------
+
+describe("events structure", () => {
+  it("PersonalReportJson events have quick.what and quick.why fields", () => {
+    const json: PersonalReportJson = {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "ok", "claude-code": "ok" },
+      events: [
+        {
+          id: "evt-1",
+          title: "Test Event",
+          topic: "Test Topic",
+          eventTime: "2026-07-27T08:00:00Z",
+          updateKind: "new",
+          status: "已确认",
+          quick: { what: "Something happened", why: "It matters to you", impact: "High" },
+          full: {
+            background: "Context",
+            evidence: "Source",
+            analysis: "Details",
+            impact: "Significant",
+            action: "Act",
+          },
+          candidateIds: ["https://example.com/1"],
+          sources: [{ name: "GitHub", url: "https://example.com/1" }],
+        },
+      ],
+      fiveMinuteBrief: { topicGroups: [{ name: "Test Topic", eventIds: ["evt-1"] }] },
+      fullReport: { topicGroups: [{ name: "Test Topic", eventIds: ["evt-1"] }] },
+    };
+    expect(json.events[0]!.quick.what).toBe("Something happened");
+    expect(json.events[0]!.quick.why).toBe("It matters to you");
+  });
+
+  it("buildReportPrompt instructs LLM to output what and why", () => {
+    const candidates: MergedCandidate[] = [];
+    const filterResult: FilterResult = { kept: [], excluded: [] };
+    const prompt = buildReportPrompt(candidates, filterResult, DEFAULT_CONFIG, "2026-07-25", "2026-07-27");
+    expect(prompt).toContain('"what"');
+    expect(prompt).toContain('"why"');
+    expect(prompt).not.toContain('"summary"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Config loading — real config.yml
+// ---------------------------------------------------------------------------
+
+describe("config.yml loading", () => {
+  it("loads real config.yml with new user profile", async () => {
+    const { loadConfig } = await import("../config.ts");
+    const config = loadConfig("config.yml");
+    expect(config.personalReport.modelBackend).toBe("mimo");
+    expect(config.personalReport.usesAnthropicAccount).toBe(false);
+    expect(config.personalReport.usesAnthropicSubscription).toBe(false);
+    expect(config.personalReport.fiveMinuteLimit).toBe(6);
+    expect(config.personalReport.fullReportLimit).toBe(16);
+    expect(config.personalReport.focusTopics).toContain("RAG 与实际项目知识库");
+    expect(config.personalReport.focusTopics).toContain("Agent 长期记忆、状态数据库和跨会话记忆");
+    expect(config.personalReport.secondaryTopics).toContain("GraphRAG 与知识图谱");
+    expect(config.personalReport.usageContext).toContain("智能诊断");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Validation — new error codes and full field requirements
+// ---------------------------------------------------------------------------
+
+describe("validateReport — strengthened rules", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function makeValidEvent(overrides: Record<string, unknown> = {}): any {
+    return {
+      id: "evt-1",
+      title: "Test Event",
+      topic: "Topic",
+      eventTime: "2026-07-27T08:00:00Z",
+      updateKind: "new",
+      status: "已确认",
+      quick: { what: "what", why: "why", impact: "impact" },
+      full: { background: "bg", evidence: "ev", analysis: "an", impact: "imp", action: "act" },
+      candidateIds: ["https://example.com/1"],
+      sources: [{ name: "GitHub", url: "https://example.com/1" }],
+      ...overrides,
+    };
+  }
+
+  function makeValidJson(eventOverrides: Record<string, unknown> = {}): PersonalReportJson {
+    const evt = makeValidEvent(eventOverrides);
+    return {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "ok", "claude-code": "ok" },
+      events: [evt],
+      fiveMinuteBrief: { topicGroups: [{ name: "Topic", eventIds: ["evt-1"] }] },
+      fullReport: { topicGroups: [{ name: "Topic", eventIds: ["evt-1"] }] },
+    };
+  }
+
+  const VALID_URLS = new Set(["https://example.com/1"]);
+
+  it("rejects when full.background is missing", () => {
+    const json = makeValidJson({ full: { evidence: "ev", analysis: "an", impact: "imp", action: "act" } });
+    const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "MISSING_FULL_FIELDS")).toBe(true);
+  });
+
+  it("rejects when full.evidence is missing", () => {
+    const json = makeValidJson({ full: { background: "bg", analysis: "an", impact: "imp", action: "act" } });
+    const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "MISSING_FULL_FIELDS")).toBe(true);
+  });
+
+  it("rejects when full.action is missing", () => {
+    const json = makeValidJson({ full: { background: "bg", evidence: "ev", analysis: "an", impact: "imp" } });
+    const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "MISSING_FULL_FIELDS")).toBe(true);
+  });
+
+  it("rejects when full.analysis is missing", () => {
+    const json = makeValidJson({ full: { background: "bg", evidence: "ev", impact: "imp", action: "act" } });
+    const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "MISSING_FULL_FIELDS")).toBe(true);
+  });
+
+  it("rejects when full.impact is missing", () => {
+    const json = makeValidJson({ full: { background: "bg", evidence: "ev", analysis: "an", action: "act" } });
+    const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "MISSING_FULL_FIELDS")).toBe(true);
+  });
+
+  it("rejects orphan events not referenced by fullReport", () => {
+    const json = makeValidJson();
+    json.events.push(makeValidEvent({ id: "evt-orphan", title: "Orphan" }));
+    const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "ORPHAN_EVENT")).toBe(true);
+  });
+
+  it("rejects fullReport duplicate IDs", () => {
+    const json = makeValidJson();
+    json.fullReport.topicGroups.push({ name: "Dup", eventIds: ["evt-1"] });
+    const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "FULL_REPORT_DUPLICATE_ID")).toBe(true);
+  });
+
+  it("rejects events count exceeding fullReportLimit", () => {
+    const config = { ...DEFAULT_CONFIG, fullReportLimit: 2 };
+    const events = [1, 2, 3].map((i) => makeValidEvent({ id: `evt-${i}`, title: `E${i}` }));
+    const json: PersonalReportJson = {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "ok", "claude-code": "ok" },
+      events: events,
+      fiveMinuteBrief: { topicGroups: [{ name: "T", eventIds: ["evt-1"] }] },
+      fullReport: { topicGroups: [{ name: "T", eventIds: ["evt-1", "evt-2", "evt-3"] }] },
+    };
+    const result = validateReport(json, config, VALID_URLS);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "EVENTS_OVER_LIMIT")).toBe(true);
+  });
+
+  it("allows fewer than fullReportLimit when insufficient value", () => {
+    const config = { ...DEFAULT_CONFIG, fullReportLimit: 16 };
+    const json = makeValidJson();
+    const result = validateReport(json, config, VALID_URLS);
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects event with no sources", () => {
+    const json = makeValidJson({ sources: [] });
+    const result = validateReport(json, DEFAULT_CONFIG, VALID_URLS);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "MISSING_SOURCE_URL")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildFilterPrompt — includes new user profile fields
+// ---------------------------------------------------------------------------
+
+describe("buildFilterPrompt — user profile", () => {
+  it("includes modelBackend and usesAnthropicSubscription in prompt", () => {
+    const candidates: MergedCandidate[] = [];
+    const prompt = buildFilterPrompt(candidates, DEFAULT_CONFIG, "2026-07-25", "2026-07-27");
+    expect(prompt).toContain("mimo");
+    expect(prompt).toContain("否"); // usesAnthropicSubscription: false
+    expect(prompt).toContain("16"); // fullReportLimit
+  });
+
+  it("includes focusTopics and secondaryTopics", () => {
+    const candidates: MergedCandidate[] = [];
+    const prompt = buildFilterPrompt(candidates, DEFAULT_CONFIG, "2026-07-25", "2026-07-27");
+    expect(prompt).toContain("上下文与记忆");
+    expect(prompt).toContain("GraphRAG");
+  });
+
+  it("uses fullReportLimit not detailLimit for cap", () => {
+    const config = { ...DEFAULT_CONFIG, fullReportLimit: 16, detailLimit: 20 };
+    const candidates: MergedCandidate[] = [];
+    const prompt = buildFilterPrompt(candidates, config, "2026-07-25", "2026-07-27");
+    expect(prompt).toContain("最多保留 16");
+    expect(prompt).not.toContain("最多保留 20");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderPersonalReportMarkdown — full report always visible
+// ---------------------------------------------------------------------------
+
+describe("renderPersonalReportMarkdown", () => {
+  const VALID_JSON: PersonalReportJson = {
+    generatedAt: "2026-07-27T08:00:00Z",
+    coverageFrom: "2026-07-23T08:00:00Z",
+    coverageTo: "2026-07-27T08:00:00Z",
+    toolStatus: { codex: "ok", "claude-code": "ok" },
+    events: [
+      {
+        id: "evt-1",
+        title: "Test Event",
+        topic: "Topic A",
+        eventTime: "2026-07-27T08:00:00Z",
+        updateKind: "new",
+        status: "已确认",
+        quick: { what: "quick what", why: "quick why", impact: "quick impact", action: "quick action" },
+        full: {
+          background: "full bg",
+          evidence: "full ev",
+          analysis: "full an",
+          impact: "full imp",
+          action: "full act",
+        },
+        candidateIds: ["https://example.com/1"],
+        sources: [{ name: "GitHub", url: "https://example.com/1" }],
+      },
+    ],
+    fiveMinuteBrief: { topicGroups: [{ name: "Topic A", eventIds: ["evt-1"] }] },
+    fullReport: { topicGroups: [{ name: "Topic A", eventIds: ["evt-1"] }] },
+  };
+
+  it("shows full report even when fiveMinute and fullReport reference same events", () => {
+    const md = renderPersonalReportMarkdown(VALID_JSON, "2026-07-27", "zh");
+    expect(md).toContain("完整报告");
+    expect(md).toContain("继续阅读完整报告");
+    expect(md).toContain("<details>");
+    expect(md).toContain("full bg");
+    expect(md).toContain("full ev");
+    expect(md).toContain("full an");
+    expect(md).toContain("full act");
+  });
+
+  it("hides full report for no-update report", () => {
+    const noUpdate: PersonalReportJson = {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "无更新", "claude-code": "无更新" },
+      events: [],
+      fiveMinuteBrief: { topicGroups: [] },
+      fullReport: { topicGroups: [] },
+    };
+    const md = renderPersonalReportMarkdown(noUpdate, "2026-07-27", "zh");
+    expect(md).not.toContain("完整报告");
+    expect(md).not.toContain("继续阅读");
+    expect(md).not.toContain("<details>");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// capFilterResult — deterministic 18→16 truncation
+// ---------------------------------------------------------------------------
+
+describe("capFilterResult", () => {
+  function makeFilterResult(count: number): FilterResult {
+    return {
+      kept: Array.from({ length: count }, (_, i) => ({
+        title: `Event ${i + 1}`,
+        keepIds: [`${i + 1}`],
+        mergedIds: [],
+        topic: "T",
+        relevance: "R",
+        confidence: "high" as const,
+        reason: "R",
+        needsContext: false,
+      })),
+      excluded: [{ id: "99", reason: "low value" }],
+    };
+  }
+
+  it("18 items capped to 16", () => {
+    const result = capFilterResult(makeFilterResult(18), 16);
+    expect(result.kept).toHaveLength(16);
+  });
+
+  it("preserves original ordering (keeps first 16)", () => {
+    const result = capFilterResult(makeFilterResult(18), 16);
+    expect(result.kept[0]!.title).toBe("Event 1");
+    expect(result.kept[15]!.title).toBe("Event 16");
+  });
+
+  it("10 items remain 10 (no padding)", () => {
+    const result = capFilterResult(makeFilterResult(10), 16);
+    expect(result.kept).toHaveLength(10);
+  });
+
+  it("does not mutate input", () => {
+    const input = makeFilterResult(18);
+    const originalLen = input.kept.length;
+    capFilterResult(input, 16);
+    expect(input.kept).toHaveLength(originalLen);
+  });
+
+  it("preserves excluded data", () => {
+    const result = capFilterResult(makeFilterResult(18), 16);
+    expect(result.excluded).toHaveLength(1);
+    expect(result.excluded[0]!.reason).toBe("low value");
+  });
+
+  it("uses config value not hardcoded", () => {
+    const result = capFilterResult(makeFilterResult(20), 16);
+    expect(result.kept).toHaveLength(16);
+    const result2 = capFilterResult(makeFilterResult(20), 8);
+    expect(result2.kept).toHaveLength(8);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Prompt — required full fields, no 可选
+// ---------------------------------------------------------------------------
+
+describe("buildReportPrompt — full fields required", () => {
+  it("does not contain 可选 for background/evidence/analysis/action", () => {
+    const candidates: MergedCandidate[] = [];
+    const filterResult: FilterResult = { kept: [], excluded: [] };
+    const prompt = buildReportPrompt(candidates, filterResult, DEFAULT_CONFIG, "2026-07-25", "2026-07-27");
+    expect(prompt).not.toContain("background（可选）");
+    expect(prompt).not.toContain("evidence（可选）");
+    expect(prompt).not.toContain("analysis（可选）");
+    expect(prompt).not.toContain("action（可选）");
+    expect(prompt).toContain("limitations（选填局限）");
+  });
+
+  it("explicitly states full fields must be non-empty", () => {
+    const candidates: MergedCandidate[] = [];
+    const filterResult: FilterResult = { kept: [], excluded: [] };
+    const prompt = buildReportPrompt(candidates, filterResult, DEFAULT_CONFIG, "2026-07-25", "2026-07-27");
+    expect(prompt).toContain("必须非空");
   });
 });

@@ -2,11 +2,11 @@ import fs from "fs";
 import path from "path";
 import { marked } from "marked";
 import { REPORT_LABELS } from "./i18n.ts";
+import { PAGES_URL as SITE_URL } from "./site.ts";
 
 const DIGESTS_DIR = "digests";
 const MANIFEST_PATH = "manifest.json";
 const FEED_PATH = "feed.xml";
-const SITE_URL = "https://duanyytop.github.io/agents-radar";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const REPORT_FILES = [
   "ai-personal",

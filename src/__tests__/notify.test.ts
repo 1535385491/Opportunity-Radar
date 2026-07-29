@@ -96,4 +96,12 @@ describe("buildMessage", () => {
     expect(msg).toContain("AI CLI 工具");
     expect(msg).not.toContain("◦");
   });
+
+  it("default PAGES_URL points to user repo, not original author", () => {
+    // When no pagesUrl argument and no PAGES_URL env, should use the site default
+    delete process.env["PAGES_URL"];
+    const msg = buildMessage("2026-03-09", ["ai-cli"]);
+    expect(msg).toContain("1535385491.github.io");
+    expect(msg).not.toContain("duanyytop");
+  });
 });

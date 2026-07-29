@@ -96,47 +96,124 @@ export interface FilterResult {
   excluded: Array<{ id: string; reason: string }>;
 }
 
+export interface ReportEvent {
+  id: string;
+  title: string;
+  topic: string;
+  eventTime: string;
+  updateKind: UpdateKind;
+  status: "已确认" | "社区信号";
+  quick: {
+    what: string;
+    why: string;
+    impact: string;
+    action?: string;
+  };
+  full: {
+    background: string;
+    evidence: string;
+    analysis: string;
+    impact: string;
+    action: string;
+    limitations?: string;
+  };
+  candidateIds: string[];
+  sources: Array<{ name: string; url: string }>;
+  projectContext?: string;
+}
+
+export interface TopicGroup {
+  name: string;
+  eventIds: string[];
+}
+
 export interface PersonalReportJson {
   generatedAt: string;
   coverageFrom: string;
   coverageTo: string;
-  overview: Array<{ id: string; topic: string; summary: string }>;
   toolStatus: Record<string, string>;
-  topics: Array<{
-    name: string;
-    items: Array<{
-      id: string;
-      candidateIds: string[];
-      title: string;
-      eventTime: string;
-      updateKind: UpdateKind;
-      what: string;
-      why: string;
-      impact: string;
-      action?: string;
-      status: "已确认" | "社区信号";
-      projectContext?: string;
-      sources: Array<{ name: string; url: string }>;
-    }>;
-  }>;
+  events: ReportEvent[];
+  fiveMinuteBrief: {
+    topicGroups: TopicGroup[];
+  };
+  fullReport: {
+    topicGroups: TopicGroup[];
+  };
 }
 
 export type ValidateErrorCode =
-  | "OVERVIEW_OVER_LIMIT"
-  | "DETAILS_OVER_LIMIT"
-  | "MISSING_ITEM_ID"
+  | "EVENTS_OVER_LIMIT"
+  | "FIVE_MINUTE_OVER_LIMIT"
+  | "MISSING_EVENT_ID"
+  | "DUPLICATE_EVENT_ID"
   | "MISSING_EVENT_TIME"
   | "INVALID_STATUS"
   | "INVALID_UPDATE_KIND"
-  | "OVERVIEW_REF_MISSING"
+  | "MISSING_QUICK_FIELDS"
+  | "MISSING_FULL_FIELDS"
+  | "FIVE_MINUTE_NOT_SUBSET"
+  | "EMPTY_EVENTS_WITH_TOOL_STATUS"
   | "TOOL_STATUS_MISSING_TOOL"
   | "FABRICATED_URL"
   | "MISSING_SOURCE_URL"
-  | "MISSING_CANDIDATE_IDS";
+  | "MISSING_CANDIDATE_IDS"
+  | "FIVE_MINUTE_EVENT_MISSING"
+  | "FULL_REPORT_EVENT_MISSING"
+  | "FULL_REPORT_DUPLICATE_ID"
+  | "ORPHAN_EVENT"
+  | "EVENTS_FULLREPORT_COUNT_MISMATCH"
+  | "TOPIC_GROUP_INVALID_EVENT_ID";
 
 export interface ValidateResult {
   ok: boolean;
   errors: Array<{ code: ValidateErrorCode; message: string }>;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime schema guard — rejects old summary-based overview
+// ---------------------------------------------------------------------------
+
+/**
+ * Checks whether a parsed JSON object conforms to the current PersonalReportJson
+ * schema. Returns `null` if valid, or an error message if malformed.
+ */
+export function guardReportSchema(json: unknown): string | null {
+  if (!json || typeof json !== "object") return "report is not an object";
+  const obj = json as Record<string, unknown>;
+
+  // Reject old schema
+  if ("overview" in obj && !("events" in obj)) {
+    return "旧 schema：使用 overview+topics 而非 events+fiveMinuteBrief+fullReport，需要重新生成";
+  }
+  if ("topics" in obj && !("events" in obj)) {
+    return "旧 schema：使用 topics 而非 events，需要重新生成";
+  }
+
+  if (!Array.isArray(obj["events"])) return "events is not an array";
+  if (!obj["toolStatus"] || typeof obj["toolStatus"] !== "object") return "toolStatus missing";
+  if (!obj["fiveMinuteBrief"] || typeof obj["fiveMinuteBrief"] !== "object") return "fiveMinuteBrief missing";
+  if (!obj["fullReport"] || typeof obj["fullReport"] !== "object") return "fullReport missing";
+  if (!obj["coverageFrom"] || !obj["coverageTo"]) return "coverage metadata missing";
+
+  const fiveMinuteBrief = obj["fiveMinuteBrief"] as Record<string, unknown>;
+  const fullReport = obj["fullReport"] as Record<string, unknown>;
+  if (!Array.isArray(fiveMinuteBrief["topicGroups"])) return "fiveMinuteBrief.topicGroups missing";
+  if (!Array.isArray(fullReport["topicGroups"])) return "fullReport.topicGroups missing";
+
+  // Validate events
+  for (const evt of obj["events"] as Record<string, unknown>[]) {
+    if (!evt || typeof evt !== "object") return "event is not an object";
+    if (!evt["id"] || typeof evt["id"] !== "string") return "event missing id";
+    if (!evt["title"] || typeof evt["title"] !== "string") return "event missing title";
+    if (!evt["quick"] || typeof evt["quick"] !== "object") return "event missing quick";
+    const quick = evt["quick"] as Record<string, unknown>;
+    if (!quick["what"] || !quick["why"] || !quick["impact"]) return "event.quick missing what/why/impact";
+    if (!evt["full"] || typeof evt["full"] !== "object") return "event missing full";
+    const full = evt["full"] as Record<string, unknown>;
+    if (!full["impact"]) return "event.full missing impact";
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -210,10 +287,7 @@ function extractGitHubItemCandidates(
   }));
 }
 
-function extractReleaseCandidates(
-  releases: GitHubRelease[],
-  cfg: RepoConfig,
-): CandidateItem[] {
+function extractReleaseCandidates(releases: GitHubRelease[], cfg: RepoConfig): CandidateItem[] {
   return releases.map((r) => ({
     id: `release::${cfg.repo}::${r.tag_name}`,
     title: `${cfg.name} ${r.tag_name}`,
@@ -309,10 +383,7 @@ export function extractWebCandidates(results: WebFetchResult[], maxItems = 5): C
 // Candidate Extraction: Trending (snapshot-aware)
 // ---------------------------------------------------------------------------
 
-export function extractTrendingCandidates(
-  data: TrendingData,
-  maxItems = 5,
-): CandidateItem[] {
+export function extractTrendingCandidates(data: TrendingData, maxItems = 5): CandidateItem[] {
   // trendingRepos are already filtered by the snapshot comparison in trending.ts
   const fromTrending = data.trendingRepos.map((r) => ({
     id: r.url,
@@ -477,7 +548,8 @@ function categorizeSource(c: CandidateItem, primaryTools: string[]): string {
   // GitHub repos — classify by primary tool
   for (const tool of primaryTools) {
     if (tool === "codex" && (subj.includes("codex") || subj.includes("openai codex"))) return "codex";
-    if (tool === "claude-code" && (subj.includes("claude code") || subj.includes("claude-code"))) return "claudeCode";
+    if (tool === "claude-code" && (subj.includes("claude code") || subj.includes("claude-code")))
+      return "claudeCode";
   }
 
   return "otherCli";
@@ -574,10 +646,7 @@ function normalizeUrl(url: string): string {
 /**
  * Final selection: cap items, ensure no more than `limit`.
  */
-export function selectFinalItems(
-  merged: MergedCandidate[],
-  limit: number,
-): MergedCandidate[] {
+export function selectFinalItems(merged: MergedCandidate[], limit: number): MergedCandidate[] {
   return merged.slice(0, limit);
 }
 
@@ -604,9 +673,7 @@ export function buildFilterPrompt(
         `  Summary: ${c.summary}\n` +
         `  Type: ${c.infoType}, Time: ${c.eventTime}, Official: ${c.officialConfirmed}\n` +
         `  Source: ${c.sourceName} — ${c.sourceUrl}\n` +
-        (c.additionalSources.length > 0
-          ? `  Also found at: ${c.additionalSources.join(", ")}\n`
-          : "") +
+        (c.additionalSources.length > 0 ? `  Also found at: ${c.additionalSources.join(", ")}\n` : "") +
         `  Raw: ${c.rawSummary}`,
     )
     .join("\n\n");
@@ -617,7 +684,11 @@ export function buildFilterPrompt(
 - 主力工具：${config.primaryTools.join("、")}
 - 平台：${config.platforms.join("、")}
 - 使用场景：${config.usageContext}
-- 关注维度：${config.focusTopics.join("、")}
+- 实际模型后端：${config.modelBackend}
+- 是否使用 Anthropic Claude 账号：${config.usesAnthropicAccount ? "是" : "否"}
+- 是否使用 Anthropic Claude 订阅：${config.usesAnthropicSubscription ? "是" : "否"}
+- 高优先级关注方向：${config.focusTopics.join("、")}
+- 一般关注方向（仅在有重大突破、明确工程价值或可立即落地时收录）：${config.secondaryTopics.join("、")}
 - 排除维度：${config.excludedTopics.join("、")}
 
 ## 覆盖时间
@@ -648,6 +719,23 @@ ${candidateBlock}
   ]
 }
 
+## 五分钟概览入选门槛（最高优先级）
+
+只有满足以下至少一项的事件才可能进入五分钟概览：
+- 会改变用户当前的行动或决策
+- 会改变工具或模型选择
+- 明确扩展当前能力边界
+- 明显提高效率或可靠性
+- 解决用户实际可能遇到的问题
+- 能直接用于用户的项目
+
+## 完整报告入选门槛
+
+完整报告可以比五分钟概览稍宽，但仍必须满足：
+- 对当前项目有明确工程参考价值；或
+- 提供可以验证、试用、迁移或实施的方法；或
+- 会影响后续技术选择和架构决策
+
 ## 筛选规则
 
 1. 主力工具优先，但不保证入选。
@@ -657,12 +745,44 @@ ${candidateBlock}
 5. Slack 等用户不使用的场景，除非体现了可迁移到用户工作流的重大能力，否则淘汰。
 6. 同一发布在官网、GitHub、HN、社区出现时合并成一个事件，keepIds 保留所有相关候选编号。
 7. 不设置最低数量。宁缺毋滥。
-8. 最多保留 ${config.detailLimit} 个事件。
+8. 最多保留 ${config.fullReportLimit} 个事件，按价值从高到低排列。
 9. 确信度为 low 且无事实支撑的条目应排除。
 10. 排除维度中的内容不要纳入。
 11. 模糊的"用量泄漏"或类似低证据投诉应排除。
 12. keepIds 中的编号必须来自输入候选列表。
-13. 需要背景说明的陌生项目设置 needsContext 为 true。`;
+13. 需要背景说明的陌生项目设置 needsContext 为 true。
+
+## 明确排除或降级
+
+- ${config.usesAnthropicSubscription ? "" : "Anthropic Claude 模型/账号/订阅/价格变化 → 直接排除（用户不使用）"}
+- AI CLI 活跃度、Star、热度、成熟度和普通横向排行榜 → 排除
+- 普通 Claw 项目动态 → 排除
+- 普通 OpenCode、Gemini CLI 等非主力工具的普通版本动态 → 排除
+- 只说明"某工具发布了"而没有实质能力变化的内容 → 排除
+- 公司战略、市场定位、社区治理 → 排除
+- 普通 UI、CI、贡献流程 → 排除
+- 没有工程证据的概念介绍 → 排除
+- 仅用于把数量补到 ${config.fullReportLimit} 条的低价值信息 → 排除
+
+## 特殊规则
+
+- 非主力工具只有出现可迁移到 Codex、Claude Code 或当前项目的重大能力时才收录。
+- 排行榜只有在评测方法可靠、与 ${config.modelBackend} 或当前模型选择直接相关，并且会改变实际决策时才允许收录。
+- Windows Bug 修复只有在用户实际可能受影响，或者升级会改变当前行动时进入概览；否则降级到工具状态或删除。
+- 陌生项目必须说明"它是什么、解决什么问题、为什么与用户有关"，否则排除。`;
+}
+
+/**
+ * Deterministic cap: truncate Stage 1 kept items to fullReportLimit.
+ * Returns a new FilterResult without mutating the input.
+ * Preserves original ordering — keeps the first N items.
+ */
+export function capFilterResult(filterResult: FilterResult, limit: number): FilterResult {
+  if (filterResult.kept.length <= limit) return filterResult;
+  return {
+    kept: filterResult.kept.slice(0, limit),
+    excluded: filterResult.excluded,
+  };
 }
 
 /**
@@ -688,7 +808,7 @@ export async function generatePersonalReport(
   console.log("  [personal] Stage 1: filtering and merging candidates...");
   const filterPrompt = buildFilterPrompt(candidates, config, coverageFrom, coverageTo);
   const filterRaw = await callLlm(filterPrompt, FILTER_TOKENS);
-  const filterResult = parseLlmJson<FilterResult>(filterRaw);
+  let filterResult = parseLlmJson<FilterResult>(filterRaw);
 
   if (!filterResult || !Array.isArray(filterResult.kept)) {
     console.error("  [personal] Stage 1 filter failed — aborting.");
@@ -700,7 +820,17 @@ export async function generatePersonalReport(
     return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
   }
 
-  console.log(`  [personal] Filter: ${filterResult.kept.length} events kept, ${filterResult.excluded?.length ?? 0} excluded`);
+  // Deterministic cap: Stage 1 must not exceed fullReportLimit
+  if (filterResult.kept.length > config.fullReportLimit) {
+    console.log(
+      `  [personal] Stage 1 returned ${filterResult.kept.length} events, capping to ${config.fullReportLimit}`,
+    );
+    filterResult = capFilterResult(filterResult, config.fullReportLimit);
+  }
+
+  console.log(
+    `  [personal] Filter: ${filterResult.kept.length} events kept, ${filterResult.excluded?.length ?? 0} excluded`,
+  );
 
   // Stage 2: Generate report from filtered events
   console.log("  [personal] Stage 2: generating structured report...");
@@ -709,7 +839,7 @@ export async function generatePersonalReport(
   const raw = await callLlm(reportPrompt, reportTokens);
   const json = parseLlmJson<PersonalReportJson>(raw);
 
-  if (!json || !json.topics) {
+  if (!json || !json.events) {
     console.error("  [personal] Stage 2 report parse failed.");
     return null;
   }
@@ -759,9 +889,10 @@ export function generateNoUpdateReport(
     generatedAt: new Date().toISOString(),
     coverageFrom,
     coverageTo,
-    overview: [],
     toolStatus,
-    topics: [],
+    events: [],
+    fiveMinuteBrief: { topicGroups: [] },
+    fullReport: { topicGroups: [] },
   };
 
   const markdown = renderMarkdown(json, dateStr, lang);
@@ -836,14 +967,18 @@ export function buildReportPrompt(
     })
     .join("\n\n");
 
-  return `你是一位 AI 技术领域的个人情报分析师。你的任务是将以下已筛选的事件整理成一份结构化的中文个人简报。
+  return `你是一位 AI 技术领域的个人情报分析师。你的任务是将以下已筛选的事件整理成一份结构化的中文个人简报，包含两层：五分钟概览和完整报告。
 
 ## 用户画像
 - 主力工具：${config.primaryTools.join("、")}
 - 平台：${config.platforms.join("、")}
 - 使用场景：${config.usageContext}
-- 关注维度：${config.focusTopics.join("、")}
+- 高优先级关注方向：${config.focusTopics.join("、")}
+- 一般关注方向（仅在重大突破或明确影响时收录）：${config.secondaryTopics.join("、")}
 - 排除维度：${config.excludedTopics.join("、")}
+- 是否使用 Anthropic Claude 账号：${config.usesAnthropicAccount ? "是" : "否"}
+- 是否使用 Anthropic Claude 订阅：${config.usesAnthropicSubscription ? "是" : "否"}
+- 实际模型后端：${config.modelBackend}
 
 ## 覆盖时间
 ${coverageFrom} ～ ${coverageTo}
@@ -856,52 +991,80 @@ ${eventBlocks}
 请输出严格的 JSON（不要包含 markdown 代码块标记），结构如下：
 
 {
-  "overview": [
-    { "id": "evt-1", "topic": "主题名", "summary": "一句话结论" }
-  ],
   "toolStatus": {
     "codex": "一句话状态或'本期无重要更新'",
     "claude-code": "一句话状态或'本期无重要更新'"
   },
-  "topics": [
+  "events": [
     {
-      "name": "主题名",
-      "items": [
-        {
-          "id": "evt-1",
-          "candidateIds": ["https://github.com/..."],
-          "title": "条目标题",
-          "eventTime": "2026-07-27T08:00:00Z",
-          "updateKind": "new",
-          "what": "发生了什么",
-          "why": "为什么值得关注",
-          "impact": "对用户的影响",
-          "action": "建议行动（可选）",
-          "status": "已确认",
-          "projectContext": "陌生项目的背景说明（需要时）",
-          "sources": [{ "name": "GitHub", "url": "https://github.com/..." }]
-        }
-      ]
+      "id": "evt-1",
+      "title": "事件标题",
+      "topic": "主题名",
+      "eventTime": "2026-07-27T08:00:00Z",
+      "updateKind": "new",
+      "status": "已确认",
+      "quick": {
+        "what": "一两句事实",
+        "why": "一两句与用户的关系",
+        "impact": "对用户的影响",
+        "action": "建议行动"
+      },
+      "full": {
+        "background": "背景",
+        "evidence": "证据和来源细节",
+        "analysis": "深入分析",
+        "impact": "详细影响分析",
+        "action": "具体可执行建议（如无需行动，写'无需立即行动'）",
+        "limitations": "局限或风险（选填）"
+      },
+      "candidateIds": ["https://github.com/..."],
+      "sources": [{ "name": "GitHub", "url": "https://github.com/..." }],
+      "projectContext": "陌生项目的背景说明（需要时）"
     }
-  ]
+  ],
+  "fiveMinuteBrief": {
+    "topicGroups": [
+      { "name": "主题名", "eventIds": ["evt-1", "evt-2"] }
+    ]
+  },
+  "fullReport": {
+    "topicGroups": [
+      { "name": "主题名", "eventIds": ["evt-1", "evt-2", "evt-3"] }
+    ]
+  }
 }
 
 ## 规则
 
-1. overview 最多 ${config.overviewLimit} 条，每条引用一个正文条目的 id。
-2. 正文 topics 中的 items 总数不超过 ${config.detailLimit} 条。
-3. 按主题组织，不按来源或项目组织。
-4. 每个条目必须有唯一的 id（格式 evt-N）。
-5. 每个条目必须有 eventTime（ISO-8601 格式），来自对应候选事件的时间。
-6. 每个条目必须有 candidateIds，列出对应的原始候选 URL。
-7. updateKind 必须是 "new"、"updated" 或 "snapshot-change" 之一。
-8. status 必须是 "已确认" 或 "社区信号"。
-9. sources 中的 URL 必须来自候选事件的 Available Sources，禁止编造。
-10. toolStatus 的 key 必须是：${config.primaryTools.join("、")}。
-11. 主力工具没有高价值更新时，toolStatus 写"本期无重要更新"。
-12. 陌生项目必须包含 projectContext，说明"它是什么"和"为什么与你有关"。
-13. 商业机会只有在具体、可信、可行动时才在 impact 或 action 中提及。
-14. 纯版本号更新不值得单独列出，除非有实质功能变化。`;
+### 事件筛选
+1. 完整报告正常包含 ${config.fullReportLimit} 个真正有价值的事件；信息不足时允许更少，不准凑数。
+2. 五分钟概览从完整报告中选择价值最高的 ${config.fiveMinuteLimit} 个事件。
+3. fiveMinuteBrief 的 eventIds 必须是 fullReport eventIds 的子集。
+4. 按动态主题组织，不按来源或项目机械分组。
+5. 每个事件必须有唯一的 id（格式 evt-N）。
+6. 每个事件必须有 eventTime（ISO-8601 格式）。
+7. 每个事件必须有 candidateIds。
+8. updateKind 必须是 "new"、"updated" 或 "snapshot-change"。
+9. status 必须是 "已确认" 或 "社区信号"。
+10. sources 中的 URL 必须来自候选事件的 Available Sources，禁止编造。
+
+### 内容要求
+11. quick 用于五分钟概览：what（事实）、why（与用户关系）、impact（影响）、action（行动）。
+12. full 用于完整报告：background（背景）、evidence（证据）、analysis（分析）、impact（详细影响）、action（具体建议）、limitations（选填局限）。full 的所有字段（除 limitations）必须非空。如确实无需行动，action 写"无需立即行动"或具体持续观察条件。
+13. quick 和 full 共享同一个事件，但信息密度不同。quick 快速传达要点，full 补充深度。
+14. toolStatus 的 key 必须是：${config.primaryTools.join("、")}。
+15. 主力工具没有高价值更新时，toolStatus 写"本期无重要更新"。
+16. 陌生项目必须包含 projectContext。
+
+### 排除规则
+17. ${config.usesAnthropicSubscription ? "" : "用户不使用 Anthropic Claude 订阅，Anthropic Claude 模型/账号/订阅的价格变化直接排除。"}
+18. AI CLI 活跃度、Star、成熟度、横向排名排除。
+19. 普通 Claw 项目和生态动态排除。
+20. 公司战略、市场定位、社区治理排除。
+21. 纯 UI、项目自身 CI 排除。
+22. 纯版本号更新排除，除非有实质功能变化。
+23. 商业机会只有在具体、可信、可行动时才提及。
+24. 五分钟概览的入选门槛更高：必须会改变用户当前行动、决策、能力边界、效率或可靠性。`;
 }
 
 // ---------------------------------------------------------------------------
@@ -932,89 +1095,170 @@ export function validateReport(
   candidateUrls: Set<string>,
 ): ValidateResult {
   const errors: ValidateResult["errors"] = [];
+  const eventIds = new Set<string>();
 
-  // Check overview limit
-  if (json.overview && json.overview.length > config.overviewLimit) {
-    errors.push({
-      code: "OVERVIEW_OVER_LIMIT",
-      message: `overview has ${json.overview.length} items, limit is ${config.overviewLimit}`,
-    });
-  }
-
-  // Collect all item IDs and validate items
-  const allItemIds = new Set<string>();
-  const allItems = (json.topics ?? []).flatMap((t) => t.items ?? []);
-
-  // Check detail limit
-  if (allItems.length > config.detailLimit) {
-    errors.push({
-      code: "DETAILS_OVER_LIMIT",
-      message: `total items ${allItems.length}, limit is ${config.detailLimit}`,
-    });
-  }
-
-  for (const item of allItems) {
-    // Item ID
-    if (!item.id) {
-      errors.push({ code: "MISSING_ITEM_ID", message: `item missing id: ${item.title}` });
+  // --- Validate each event ---
+  for (const evt of json.events ?? []) {
+    if (!evt.id) {
+      errors.push({ code: "MISSING_EVENT_ID", message: `event missing id: ${evt.title}` });
     } else {
-      allItemIds.add(item.id);
+      if (eventIds.has(evt.id)) {
+        errors.push({ code: "DUPLICATE_EVENT_ID", message: `duplicate event id: ${evt.id}` });
+      }
+      eventIds.add(evt.id);
     }
-
-    // Event time
-    if (!item.eventTime || item.eventTime === "0") {
-      errors.push({ code: "MISSING_EVENT_TIME", message: `item missing eventTime: ${item.title}` });
+    if (!evt.eventTime || evt.eventTime === "0") {
+      errors.push({ code: "MISSING_EVENT_TIME", message: `event missing eventTime: ${evt.title}` });
     }
-
-    // Status
-    if (!VALID_STATUSES.has(item.status)) {
-      errors.push({ code: "INVALID_STATUS", message: `invalid status "${item.status}" in: ${item.title}` });
+    if (!VALID_STATUSES.has(evt.status)) {
+      errors.push({ code: "INVALID_STATUS", message: `invalid status "${evt.status}" in: ${evt.title}` });
     }
-
-    // Update kind
-    if (!VALID_UPDATE_KINDS.has(item.updateKind)) {
+    if (!VALID_UPDATE_KINDS.has(evt.updateKind)) {
       errors.push({
         code: "INVALID_UPDATE_KIND",
-        message: `invalid updateKind "${item.updateKind}" in: ${item.title}`,
+        message: `invalid updateKind "${evt.updateKind}" in: ${evt.title}`,
       });
     }
-
-    // Candidate IDs present
-    if (!item.candidateIds || item.candidateIds.length === 0) {
-      errors.push({ code: "MISSING_CANDIDATE_IDS", message: `item missing candidateIds: ${item.title}` });
+    // Quick fields
+    if (!evt.quick?.what || !evt.quick?.why || !evt.quick?.impact) {
+      errors.push({
+        code: "MISSING_QUICK_FIELDS",
+        message: `event missing quick.what/why/impact: ${evt.title}`,
+      });
     }
-
+    // Full fields: background, evidence, analysis, impact, action required
+    const missingFull: string[] = [];
+    if (!evt.full?.background) missingFull.push("background");
+    if (!evt.full?.evidence) missingFull.push("evidence");
+    if (!evt.full?.analysis) missingFull.push("analysis");
+    if (!evt.full?.impact) missingFull.push("impact");
+    if (!evt.full?.action) missingFull.push("action");
+    if (missingFull.length > 0) {
+      errors.push({
+        code: "MISSING_FULL_FIELDS",
+        message: `event missing full.${missingFull.join("/")}: ${evt.title}`,
+      });
+    }
+    // At least one source
+    if (!evt.sources || evt.sources.length === 0) {
+      errors.push({ code: "MISSING_SOURCE_URL", message: `event has no sources: ${evt.title}` });
+    }
     // Source URL whitelist
-    for (const source of item.sources ?? []) {
+    for (const source of evt.sources ?? []) {
       if (!source.url) {
-        errors.push({ code: "MISSING_SOURCE_URL", message: `source missing url in: ${item.title}` });
+        errors.push({ code: "MISSING_SOURCE_URL", message: `source missing url in: ${evt.title}` });
       } else if (!candidateUrls.has(source.url)) {
+        errors.push({ code: "FABRICATED_URL", message: `fabricated URL: ${source.url} (in: ${evt.title})` });
+      }
+    }
+    // Candidate IDs
+    if (!evt.candidateIds || evt.candidateIds.length === 0) {
+      errors.push({ code: "MISSING_CANDIDATE_IDS", message: `event missing candidateIds: ${evt.title}` });
+    }
+  }
+
+  // --- Events count limit ---
+  const eventsCount = (json.events ?? []).length;
+  if (eventsCount > config.fullReportLimit) {
+    errors.push({
+      code: "EVENTS_OVER_LIMIT",
+      message: `events has ${eventsCount} items, limit is ${config.fullReportLimit}`,
+    });
+  }
+
+  // --- Validate fullReport references ---
+  const fullReportIdList: string[] = [];
+  const fullReportIds = new Set<string>();
+  for (const group of json.fullReport?.topicGroups ?? []) {
+    for (const id of group.eventIds ?? []) {
+      fullReportIdList.push(id);
+      fullReportIds.add(id);
+      if (!eventIds.has(id)) {
         errors.push({
-          code: "FABRICATED_URL",
-          message: `fabricated URL not in candidates: ${source.url} (in: ${item.title})`,
+          code: "FULL_REPORT_EVENT_MISSING",
+          message: `fullReport references missing event: ${id}`,
         });
       }
     }
   }
 
-  // Overview references valid item IDs
-  for (const ov of json.overview ?? []) {
-    if (ov.id && !allItemIds.has(ov.id)) {
+  // fullReport duplicate IDs
+  const fullReportDupes = fullReportIdList.filter((id, i) => fullReportIdList.indexOf(id) !== i);
+  if (fullReportDupes.length > 0) {
+    errors.push({
+      code: "FULL_REPORT_DUPLICATE_ID",
+      message: `fullReport has duplicate eventIds: ${[...new Set(fullReportDupes)].join(", ")}`,
+    });
+  }
+
+  // fullReport unique count limit
+  if (fullReportIds.size > config.fullReportLimit) {
+    errors.push({
+      code: "EVENTS_OVER_LIMIT",
+      message: `fullReport has ${fullReportIds.size} unique events, limit is ${config.fullReportLimit}`,
+    });
+  }
+
+  // Orphan events: events not referenced by fullReport
+  for (const evt of json.events ?? []) {
+    if (!fullReportIds.has(evt.id)) {
       errors.push({
-        code: "OVERVIEW_REF_MISSING",
-        message: `overview references non-existent item: ${ov.id}`,
+        code: "ORPHAN_EVENT",
+        message: `orphan event ${evt.id} ("${evt.title}") not in fullReport`,
       });
     }
+  }
+
+  // events count must match fullReport unique count
+  if (eventsCount > 0 && fullReportIds.size !== eventsCount) {
+    errors.push({
+      code: "EVENTS_FULLREPORT_COUNT_MISMATCH",
+      message: `events count (${eventsCount}) != fullReport unique IDs (${fullReportIds.size})`,
+    });
+  }
+
+  // --- Validate fiveMinuteBrief ---
+  const fiveMinuteIds = new Set<string>();
+  for (const group of json.fiveMinuteBrief?.topicGroups ?? []) {
+    for (const id of group.eventIds ?? []) {
+      fiveMinuteIds.add(id);
+      if (!eventIds.has(id)) {
+        errors.push({
+          code: "FIVE_MINUTE_EVENT_MISSING",
+          message: `fiveMinuteBrief references missing event: ${id}`,
+        });
+      }
+    }
+  }
+
+  // fiveMinute must be subset of fullReport
+  for (const id of fiveMinuteIds) {
+    if (!fullReportIds.has(id)) {
+      errors.push({ code: "FIVE_MINUTE_NOT_SUBSET", message: `fiveMinute event ${id} not in fullReport` });
+    }
+  }
+
+  // fiveMinute limit
+  if (fiveMinuteIds.size > config.fiveMinuteLimit) {
+    errors.push({
+      code: "FIVE_MINUTE_OVER_LIMIT",
+      message: `fiveMinuteBrief has ${fiveMinuteIds.size} events, limit is ${config.fiveMinuteLimit}`,
+    });
+  }
+
+  // When events exist, fiveMinuteBrief must not be empty
+  if (eventsCount > 0 && fiveMinuteIds.size === 0) {
+    errors.push({
+      code: "EMPTY_EVENTS_WITH_TOOL_STATUS",
+      message: `events has ${eventsCount} items but fiveMinuteBrief is empty`,
+    });
   }
 
   // toolStatus must contain all primary tools
   const toolStatusKeys = new Set(Object.keys(json.toolStatus ?? {}));
   for (const tool of config.primaryTools) {
     if (!toolStatusKeys.has(tool)) {
-      errors.push({
-        code: "TOOL_STATUS_MISSING_TOOL",
-        message: `toolStatus missing primary tool: ${tool}`,
-      });
+      errors.push({ code: "TOOL_STATUS_MISSING_TOOL", message: `toolStatus missing primary tool: ${tool}` });
     }
   }
 
@@ -1025,33 +1269,59 @@ export function validateReport(
 // Report Rendering: Markdown
 // ---------------------------------------------------------------------------
 
-/**
- * Renders the structured JSON report to Markdown.
- */
+function renderEventQuick(evt: ReportEvent, lang: Lang, index: number): string[] {
+  const lines: string[] = [];
+  lines.push(`### ${index}. ${evt.title}`);
+  lines.push("");
+  lines.push(`- **${lang === "zh" ? "发生了什么" : "What"}**：${evt.quick.what}`);
+  lines.push(`- **${lang === "zh" ? "为什么与你有关" : "Why"}**：${evt.quick.why}`);
+  lines.push(`- **${lang === "zh" ? "影响" : "Impact"}**：${evt.quick.impact}`);
+  if (evt.quick.action) lines.push(`- **${lang === "zh" ? "建议行动" : "Action"}**：${evt.quick.action}`);
+  lines.push(`- 🕐 ${evt.eventTime}`);
+  const srcLinks = evt.sources.map((s) => `[${s.name}](${s.url})`).join(" · ");
+  if (srcLinks) lines.push(`- 📎 ${srcLinks}`);
+  return lines;
+}
+
+function renderEventFull(evt: ReportEvent, lang: Lang): string[] {
+  const lines: string[] = [];
+  lines.push(`### ${evt.title}`);
+  lines.push("");
+  lines.push(`- **${lang === "zh" ? "发生了什么" : "What"}**：${evt.quick.what}`);
+  if (evt.full.background)
+    lines.push(`- **${lang === "zh" ? "背景" : "Background"}**：${evt.full.background}`);
+  if (evt.full.evidence) lines.push(`- **${lang === "zh" ? "证据" : "Evidence"}**：${evt.full.evidence}`);
+  if (evt.full.analysis) lines.push(`- **${lang === "zh" ? "分析" : "Analysis"}**：${evt.full.analysis}`);
+  lines.push(`- **${lang === "zh" ? "影响" : "Impact"}**：${evt.full.impact}`);
+  if (evt.full.action) lines.push(`- **${lang === "zh" ? "建议行动" : "Action"}**：${evt.full.action}`);
+  if (evt.full.limitations)
+    lines.push(`- **${lang === "zh" ? "局限" : "Limitations"}**：${evt.full.limitations}`);
+  lines.push(`- **${lang === "zh" ? "状态" : "Status"}**：${evt.status}`);
+  lines.push(`- 🕐 ${evt.eventTime}`);
+  const srcLinks = evt.sources.map((s) => `[${s.name}](${s.url})`).join(" · ");
+  if (srcLinks) lines.push(`- 📎 ${srcLinks}`);
+  if (evt.projectContext)
+    lines.push(`- **${lang === "zh" ? "项目背景" : "Context"}**：${evt.projectContext}`);
+  return lines;
+}
+
+export function renderPersonalReportMarkdown(
+  report: PersonalReportJson,
+  dateStr: string,
+  lang: Lang,
+): string {
+  return renderMarkdown(report, dateStr, lang);
+}
+
 function renderMarkdown(report: PersonalReportJson, dateStr: string, lang: Lang): string {
   const lines: string[] = [];
 
-  // Title
   lines.push(`# ${lang === "zh" ? "AI 前沿个人简报" : "AI Frontier Personal Briefing"} ${dateStr}`);
   lines.push("");
-  lines.push(
-    `> ${lang === "zh" ? "覆盖时间" : "Coverage"}：${report.coverageFrom} ～ ${report.coverageTo}`,
-  );
+  lines.push(`> ${lang === "zh" ? "覆盖时间" : "Coverage"}：${report.coverageFrom} ～ ${report.coverageTo}`);
   lines.push("");
 
-  // 5-minute overview
-  lines.push(`## ${lang === "zh" ? "五分钟概览" : "5-Minute Overview"}`);
-  lines.push("");
-  if (report.overview?.length) {
-    report.overview.forEach((item, i) => {
-      lines.push(`${i + 1}. **${item.topic}**：${item.summary}`);
-    });
-  } else {
-    lines.push(lang === "zh" ? "本期无重要更新。" : "No significant updates this period.");
-  }
-  lines.push("");
-
-  // Primary tool status
+  // Tool status
   lines.push(`## ${lang === "zh" ? "主力工具状态" : "Primary Tool Status"}`);
   lines.push("");
   for (const [tool, status] of Object.entries(report.toolStatus ?? {})) {
@@ -1059,41 +1329,65 @@ function renderMarkdown(report: PersonalReportJson, dateStr: string, lang: Lang)
   }
   lines.push("");
 
-  // Topic sections
-  for (const topic of report.topics ?? []) {
-    lines.push(`## ${topic.name}`);
-    lines.push("");
-    for (const item of topic.items ?? []) {
-      lines.push(`### ${item.title}`);
+  // Build event lookup
+  const eventMap = new Map<string, ReportEvent>();
+  for (const evt of report.events ?? []) eventMap.set(evt.id, evt);
+
+  // 5-minute brief
+  const fiveMinuteIds: string[] = [];
+  lines.push(`## ${lang === "zh" ? "五分钟概览" : "5-Minute Brief"}`);
+  lines.push("");
+  const fmbGroups = report.fiveMinuteBrief?.topicGroups ?? [];
+  if (fmbGroups.length === 0) {
+    lines.push(lang === "zh" ? "本期无重要更新。" : "No significant updates this period.");
+  } else {
+    let idx = 0;
+    for (const group of fmbGroups) {
+      if (group.name) lines.push(`### ${group.name}`);
       lines.push("");
-      lines.push(`- ${lang === "zh" ? "发生了什么" : "What"}：${item.what}`);
-      lines.push(`- ${lang === "zh" ? "为什么值得关注" : "Why"}：${item.why}`);
-      lines.push(`- ${lang === "zh" ? "对你的影响" : "Impact"}：${item.impact}`);
-      if (item.action) {
-        lines.push(`- ${lang === "zh" ? "建议行动" : "Action"}：${item.action}`);
+      for (const id of group.eventIds ?? []) {
+        const evt = eventMap.get(id);
+        if (!evt) continue;
+        fiveMinuteIds.push(id);
+        idx++;
+        lines.push(...renderEventQuick(evt, lang, idx));
+        lines.push("");
       }
+    }
+  }
+  lines.push("");
+
+  // Full report — show whenever fullReport has events (full content is deeper than quick)
+  const fullReportIds: string[] = [];
+  for (const group of report.fullReport?.topicGroups ?? []) {
+    for (const id of group.eventIds ?? []) fullReportIds.push(id);
+  }
+
+  if (fullReportIds.length > 0) {
+    lines.push(`## ${lang === "zh" ? "完整报告" : "Full Report"}`);
+    lines.push("");
+    lines.push(
+      `> ${lang === "zh" ? "继续阅读完整报告" : "Continue reading full report"}（${lang === "zh" ? "约" : "~"}${fullReportIds.length} ${lang === "zh" ? "条" : "items"}）`,
+    );
+    lines.push("");
+
+    for (const group of report.fullReport?.topicGroups ?? []) {
+      lines.push(`<details>`);
       lines.push(
-        `- ${lang === "zh" ? "状态" : "Status"}：${item.status}`,
+        `<summary>${group.name}（${(group.eventIds ?? []).length} ${lang === "zh" ? "条" : "items"}）</summary>`,
       );
-      if (item.updateKind) {
-        const kindLabel = item.updateKind === "new" ? "本期新建" : item.updateKind === "updated" ? "旧事项更新" : "快照变化";
-        lines.push(`- ${lang === "zh" ? "更新类型" : "Update Type"}：${kindLabel}`);
+      lines.push("");
+      for (const id of group.eventIds ?? []) {
+        const evt = eventMap.get(id);
+        if (!evt) continue;
+        lines.push(...renderEventFull(evt, lang));
+        lines.push("");
       }
-      if (item.eventTime) {
-        lines.push(`- ${lang === "zh" ? "时间" : "Time"}：${item.eventTime}`);
-      }
-      const sourceLinks = (item.sources ?? [])
-        .map((s) => `[${s.name}](${s.url})`)
-        .join(" · ");
-      lines.push(`- ${lang === "zh" ? "来源" : "Sources"}：${sourceLinks}`);
-      if (item.projectContext) {
-        lines.push(`- ${lang === "zh" ? "项目背景" : "Project Context"}：${item.projectContext}`);
-      }
+      lines.push(`</details>`);
       lines.push("");
     }
   }
 
-  // Footer
   lines.push("---");
   lines.push(autoGenFooter(lang));
 

@@ -130,8 +130,24 @@ function repairJson(s: string): string {
 // File output
 // ---------------------------------------------------------------------------
 
+/**
+ * When true, saveFile writes to `digests/preview-<date>/` instead of
+ * `digests/<date>/`, so a dry run never overwrites formal reports.
+ */
+let dryRunMode = false;
+
+export function setDryRunMode(on: boolean): void {
+  dryRunMode = on;
+}
+
+export function isDryRunMode(): boolean {
+  return dryRunMode;
+}
+
 export function saveFile(content: string, ...segments: string[]): string {
-  const filepath = path.join("digests", ...segments);
+  const [first, ...rest] = segments;
+  const effectiveFirst = dryRunMode && first ? `preview-${first}` : first;
+  const filepath = path.join("digests", effectiveFirst ?? "", ...rest);
   fs.mkdirSync(path.dirname(filepath), { recursive: true });
   fs.writeFileSync(filepath, content, "utf-8");
   return filepath;
