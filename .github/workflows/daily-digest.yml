@@ -80,6 +80,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || '@agents_radar' }}
           PAGES_URL: https://1535385491.github.io/Opportunity-Radar
+          REPORT_DATE: ${{ steps.date.outputs.REPORT_DATE }}
         run: pnpm notify
 
       - name: Send Feishu notification
@@ -92,6 +93,7 @@ jobs:
         run: pnpm notify:feishu
 
       - name: Persist notification state
+        if: always()
         run: |
           git add digests/notification-state.json
           if ! git diff --cached --quiet; then

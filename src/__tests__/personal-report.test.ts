@@ -22,6 +22,7 @@ import {
   buildReportPrompt,
   buildCandidateUrlSet,
   buildKeptCandidateUrlSet,
+  buildFilterEventUrlMap,
   validateReport,
   validateFilterResult,
   guardReportSchema,
@@ -1497,5 +1498,303 @@ describe("validateReport — URL uniqueness by event ID", () => {
     const result = validateReport(json, DEFAULT_CONFIG, urls);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.message.includes("multiple events"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterEventId binding — per-event URL validation
+// ---------------------------------------------------------------------------
+
+describe("validateReport — filterEventId binding", () => {
+  function makeEvent(
+    id: string,
+    filterEventId: string,
+    candidateIds: string[],
+    sources: Array<{ name: string; url: string }>,
+  ) {
+    return {
+      filterEventId,
+      id,
+      title: `Event ${id}`,
+      topic: "T",
+      eventTime: "2026-07-27T08:00:00Z",
+      updateKind: "new" as const,
+      status: "已确认" as const,
+      quick: { what: "w", why: "y", impact: "i", action: "a" },
+      full: { background: "b", evidence: "e", analysis: "a", impact: "i", action: "a" },
+      candidateIds,
+      sources,
+    };
+  }
+
+  function makeJson(events: ReturnType<typeof makeEvent>[]): PersonalReportJson {
+    return {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "ok", "claude-code": "ok" },
+      events,
+      fiveMinuteBrief: { topicGroups: [{ name: "T", eventIds: events.map((e) => e.id) }] },
+      fullReport: { topicGroups: [{ name: "T", eventIds: events.map((e) => e.id) }] },
+    };
+  }
+
+  const filterEventUrlMap = new Map([
+    ["filter-event-1", new Set(["https://url-a.com/1"])],
+    ["filter-event-2", new Set(["https://url-b.com/2"])],
+  ]);
+
+  it("passes when events correctly use their own filterEventId URLs", () => {
+    const json = makeJson([
+      makeEvent(
+        "evt-1",
+        "filter-event-1",
+        ["https://url-a.com/1"],
+        [{ name: "A", url: "https://url-a.com/1" }],
+      ),
+      makeEvent(
+        "evt-2",
+        "filter-event-2",
+        ["https://url-b.com/2"],
+        [{ name: "B", url: "https://url-b.com/2" }],
+      ),
+    ]);
+    const allUrls = new Set(["https://url-a.com/1", "https://url-b.com/2"]);
+    const result = validateReport(json, DEFAULT_CONFIG, allUrls, filterEventUrlMap);
+    expect(result.ok).toBe(true);
+  });
+
+  it("fails when events swap URLs (A uses B's URL)", () => {
+    const json = makeJson([
+      makeEvent(
+        "evt-1",
+        "filter-event-1",
+        ["https://url-b.com/2"],
+        [{ name: "B", url: "https://url-b.com/2" }],
+      ),
+      makeEvent(
+        "evt-2",
+        "filter-event-2",
+        ["https://url-a.com/1"],
+        [{ name: "A", url: "https://url-a.com/1" }],
+      ),
+    ]);
+    const allUrls = new Set(["https://url-a.com/1", "https://url-b.com/2"]);
+    const result = validateReport(json, DEFAULT_CONFIG, allUrls, filterEventUrlMap);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "SOURCE_LEAKED_FROM_OTHER_FILTER_EVENT")).toBe(true);
+  });
+
+  it("fails when one filterEventId is used by two final events", () => {
+    const json = makeJson([
+      makeEvent(
+        "evt-1",
+        "filter-event-1",
+        ["https://url-a.com/1"],
+        [{ name: "A", url: "https://url-a.com/1" }],
+      ),
+      makeEvent(
+        "evt-2",
+        "filter-event-1",
+        ["https://url-a.com/1"],
+        [{ name: "A", url: "https://url-a.com/1" }],
+      ),
+    ]);
+    const allUrls = new Set(["https://url-a.com/1"]);
+    const result = validateReport(json, DEFAULT_CONFIG, allUrls, filterEventUrlMap);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "FILTER_EVENT_MULTI_MAPPED")).toBe(true);
+  });
+
+  it("fails when a kept filterEventId has no corresponding final event", () => {
+    const json = makeJson([
+      makeEvent(
+        "evt-1",
+        "filter-event-1",
+        ["https://url-a.com/1"],
+        [{ name: "A", url: "https://url-a.com/1" }],
+      ),
+      // filter-event-2 has no final event
+    ]);
+    const allUrls = new Set(["https://url-a.com/1"]);
+    const result = validateReport(json, DEFAULT_CONFIG, allUrls, filterEventUrlMap);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "FILTER_EVENT_NOT_MAPPED")).toBe(true);
+  });
+
+  it("passes when merged candidates have multiple URLs under one filterEventId", () => {
+    const mergedMap = new Map([
+      ["filter-event-1", new Set(["https://primary.com/1", "https://extra.com/1"])],
+    ]);
+    const json = makeJson([
+      makeEvent(
+        "evt-1",
+        "filter-event-1",
+        ["https://primary.com/1", "https://extra.com/1"],
+        [
+          { name: "P", url: "https://primary.com/1" },
+          { name: "E", url: "https://extra.com/1" },
+        ],
+      ),
+    ]);
+    const allUrls = new Set(["https://primary.com/1", "https://extra.com/1"]);
+    const result = validateReport(json, DEFAULT_CONFIG, allUrls, mergedMap);
+    expect(result.ok).toBe(true);
+  });
+
+  it("fails when filterEventId is missing", () => {
+    const evt = makeEvent(
+      "evt-1",
+      "filter-event-1",
+      ["https://url-a.com/1"],
+      [{ name: "A", url: "https://url-a.com/1" }],
+    );
+    delete (evt as Record<string, unknown>).filterEventId;
+    const json = makeJson([evt]);
+    const allUrls = new Set(["https://url-a.com/1"]);
+    const result = validateReport(json, DEFAULT_CONFIG, allUrls, filterEventUrlMap);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "UNKNOWN_FILTER_EVENT_ID")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fiveMinuteBrief dedup
+// ---------------------------------------------------------------------------
+
+describe("validateReport — fiveMinuteBrief dedup", () => {
+  function makeEvent(id: string) {
+    return {
+      id,
+      title: `Event ${id}`,
+      topic: "T",
+      eventTime: "2026-07-27T08:00:00Z",
+      updateKind: "new" as const,
+      status: "已确认" as const,
+      quick: { what: "w", why: "y", impact: "i", action: "a" },
+      full: { background: "b", evidence: "e", analysis: "a", impact: "i", action: "a" },
+      candidateIds: [`https://example.com/${id}`],
+      sources: [{ name: "S", url: `https://example.com/${id}` }],
+    };
+  }
+
+  it("rejects duplicate ID within same topic", () => {
+    const json: PersonalReportJson = {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "ok", "claude-code": "ok" },
+      events: [makeEvent("evt-1")],
+      fiveMinuteBrief: { topicGroups: [{ name: "T", eventIds: ["evt-1", "evt-1"] }] },
+      fullReport: { topicGroups: [{ name: "T", eventIds: ["evt-1"] }] },
+    };
+    const urls = new Set(["https://example.com/evt-1"]);
+    const result = validateReport(json, DEFAULT_CONFIG, urls);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "FIVE_MINUTE_DUPLICATE_ID")).toBe(true);
+  });
+
+  it("rejects duplicate ID across different topics", () => {
+    const json: PersonalReportJson = {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "ok", "claude-code": "ok" },
+      events: [makeEvent("evt-1")],
+      fiveMinuteBrief: {
+        topicGroups: [
+          { name: "A", eventIds: ["evt-1"] },
+          { name: "B", eventIds: ["evt-1"] },
+        ],
+      },
+      fullReport: { topicGroups: [{ name: "T", eventIds: ["evt-1"] }] },
+    };
+    const urls = new Set(["https://example.com/evt-1"]);
+    const result = validateReport(json, DEFAULT_CONFIG, urls);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "FIVE_MINUTE_DUPLICATE_ID")).toBe(true);
+  });
+
+  it("rejects when duplicates bypass fiveMinuteLimit", () => {
+    const config = { ...DEFAULT_CONFIG, fiveMinuteLimit: 2 };
+    const events = [makeEvent("evt-1"), makeEvent("evt-2"), makeEvent("evt-3")];
+    const json: PersonalReportJson = {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "ok", "claude-code": "ok" },
+      events,
+      // 3 unique but 4 total references (evt-1 twice) → exceeds limit of 2
+      fiveMinuteBrief: { topicGroups: [{ name: "T", eventIds: ["evt-1", "evt-2", "evt-1"] }] },
+      fullReport: { topicGroups: [{ name: "T", eventIds: ["evt-1", "evt-2", "evt-3"] }] },
+    };
+    const urls = new Set([
+      "https://example.com/evt-1",
+      "https://example.com/evt-2",
+      "https://example.com/evt-3",
+    ]);
+    const result = validateReport(json, config, urls);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "FIVE_MINUTE_DUPLICATE_ID")).toBe(true);
+    expect(result.errors.some((e) => e.code === "FIVE_MINUTE_OVER_LIMIT")).toBe(true);
+  });
+
+  it("passes for valid 6-item fiveMinuteBrief", () => {
+    const events = Array.from({ length: 6 }, (_, i) => makeEvent(`evt-${i + 1}`));
+    const json: PersonalReportJson = {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "ok", "claude-code": "ok" },
+      events,
+      fiveMinuteBrief: { topicGroups: [{ name: "T", eventIds: events.map((e) => e.id) }] },
+      fullReport: { topicGroups: [{ name: "T", eventIds: events.map((e) => e.id) }] },
+    };
+    const urls = new Set(events.map((e) => `https://example.com/${e.id}`));
+    const result = validateReport(json, DEFAULT_CONFIG, urls);
+    expect(result.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildFilterEventUrlMap
+// ---------------------------------------------------------------------------
+
+describe("buildFilterEventUrlMap", () => {
+  it("assigns sequential filterEventIds and collects URLs", () => {
+    const candidates: MergedCandidate[] = [
+      { ...makeCandidate({ id: "a", sourceUrl: "https://a.com" }), additionalSources: ["https://extra.com"] },
+      { ...makeCandidate({ id: "b", sourceUrl: "https://b.com" }), additionalSources: [] },
+    ];
+    const filterResult: FilterResult = {
+      kept: [
+        {
+          title: "E1",
+          keepIds: ["1"],
+          mergedIds: [],
+          topic: "T",
+          relevance: "R",
+          confidence: "high",
+          reason: "R",
+          needsContext: false,
+        },
+        {
+          title: "E2",
+          keepIds: ["2"],
+          mergedIds: [],
+          topic: "T",
+          relevance: "R",
+          confidence: "high",
+          reason: "R",
+          needsContext: false,
+        },
+      ],
+      excluded: [],
+    };
+    const map = buildFilterEventUrlMap(candidates, filterResult);
+    expect(map.size).toBe(2);
+    expect(map.get("filter-event-1")).toContain("https://a.com");
+    expect(map.get("filter-event-1")).toContain("https://extra.com");
+    expect(map.get("filter-event-2")).toContain("https://b.com");
   });
 });

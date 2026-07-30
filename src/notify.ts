@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 import { NOTIFY_LABELS } from "./i18n.ts";
 import { PAGES_URL as SITE_PAGES_URL } from "./site.ts";
 import type { ReportHighlights } from "./prompts-data.ts";
+import { isAlreadySent, recordSend, makeNotificationKey } from "./notification-state.ts";
 
 export interface Highlights {
   zh: ReportHighlights;
@@ -102,21 +103,42 @@ async function main(): Promise<void> {
     return;
   }
 
+  const CHAT_ID = process.env["TELEGRAM_CHAT_ID"] || "@agents_radar";
+  const reportDate = process.env["REPORT_DATE"] ?? "";
+
+  if (!reportDate) {
+    console.error("[notify] REPORT_DATE not set — refusing to send without explicit date.");
+    process.exit(1);
+  }
+
   if (!fs.existsSync("manifest.json")) {
-    console.log("[notify] manifest.json not found — skipping.");
-    return;
+    console.error("[notify] manifest.json not found — refusing to send.");
+    process.exit(1);
   }
 
   const { dates } = JSON.parse(fs.readFileSync("manifest.json", "utf-8")) as {
     dates: { date: string; reports: string[] }[];
   };
 
-  const latest = dates?.[0];
-  if (!latest) {
-    console.log("[notify] manifest is empty — skipping.");
+  const entry = dates?.find((d) => d.date === reportDate);
+  if (!entry) {
+    console.error(`[notify] ${reportDate} not in manifest — refusing to send.`);
+    process.exit(1);
+  }
+  const { date, reports } = entry;
+
+  // Dedup check
+  const baseReports = reports.filter((r) => !r.endsWith("-en"));
+  const isMonthly = baseReports.includes("ai-monthly");
+  const isWeekly = baseReports.includes("ai-weekly");
+  const type = isMonthly ? "monthly" : isWeekly ? "weekly" : "daily";
+  const notifKey = makeNotificationKey("telegram", type, date, CHAT_ID);
+  const forceSend = process.env["FORCE_SEND"] === "true";
+
+  if (isAlreadySent(notifKey) && !forceSend) {
+    console.log(`[notify] Already sent ${notifKey} — skipping. Use FORCE_SEND=true to resend.`);
     return;
   }
-  const { date, reports } = latest;
 
   // Load highlights if available
   let highlights: Highlights | null = null;
@@ -124,7 +146,6 @@ async function main(): Promise<void> {
   if (fs.existsSync(highlightsPath)) {
     try {
       const raw = JSON.parse(fs.readFileSync(highlightsPath, "utf-8")) as Record<string, unknown>;
-      // Support both old bilingual format {zh: ..., en: ...} and new flat format
       if (raw?.zh || raw?.en) {
         highlights = raw as unknown as Highlights;
       } else {
@@ -139,6 +160,9 @@ async function main(): Promise<void> {
 
   console.log(`[notify] Sending Telegram message for ${date} (${reports.length} reports)…`);
   await sendTelegram(text);
+
+  // Record successful send
+  recordSend(notifKey);
   console.log("[notify] Done!");
 }
 

@@ -601,3 +601,66 @@ describe("workflow REPORT_DATE", () => {
     expect(workflowContent).not.toContain("github.event.schedule == '' && '' || ''");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Notification state shared module
+// ---------------------------------------------------------------------------
+
+describe("notification state module", () => {
+  it("hashDestination returns consistent 12-char hash", async () => {
+    const { hashDestination } = await import("../notification-state.ts");
+    const h1 = hashDestination("chat-123");
+    const h2 = hashDestination("chat-123");
+    expect(h1).toBe(h2);
+    expect(h1).toHaveLength(12);
+  });
+
+  it("hashDestination produces different hashes for different inputs", async () => {
+    const { hashDestination } = await import("../notification-state.ts");
+    expect(hashDestination("chat-123")).not.toBe(hashDestination("chat-456"));
+  });
+
+  it("makeNotificationKey includes channel, type, date, and hash", async () => {
+    const { makeNotificationKey, hashDestination } = await import("../notification-state.ts");
+    const key = makeNotificationKey("telegram", "daily", "2026-07-27", "chat-123");
+    expect(key).toContain("telegram");
+    expect(key).toContain("daily");
+    expect(key).toContain("2026-07-27");
+    expect(key).toContain(hashDestination("chat-123"));
+    // Must NOT contain raw secret
+    expect(key).not.toContain("chat-123");
+  });
+
+  it("makeFeishuIdempotencyKey is ≤50 chars", async () => {
+    const { makeFeishuIdempotencyKey } = await import("../notification-state.ts");
+    const key = makeFeishuIdempotencyKey("daily", "2026-07-27", "chat-id-12345");
+    expect(key.length).toBeLessThanOrEqual(50);
+    expect(key).toContain("notif-");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Telegram REPORT_DATE checks (in workflow)
+// ---------------------------------------------------------------------------
+
+describe("workflow — Telegram REPORT_DATE", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require("node:fs") as typeof import("node:fs");
+  let workflowContent: string;
+  try {
+    workflowContent = fs.readFileSync(".github/workflows/daily-digest.yml", "utf-8");
+  } catch {
+    workflowContent = "";
+  }
+
+  it("Telegram step has REPORT_DATE env", () => {
+    // The Telegram step should have REPORT_DATE
+    const telegramSection = workflowContent.split("Send Telegram")[1]?.split("Send Feishu")[0] ?? "";
+    expect(telegramSection).toContain("REPORT_DATE");
+  });
+
+  it("persist step uses if: always()", () => {
+    const persistSection = workflowContent.split("Persist notification state")[1] ?? "";
+    expect(persistSection).toContain("always()");
+  });
+});

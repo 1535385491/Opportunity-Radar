@@ -97,6 +97,8 @@ export interface FilterResult {
 }
 
 export interface ReportEvent {
+  /** Stable ID assigned by Stage 1 filter, binding this event to its source candidates. */
+  filterEventId?: string;
   id: string;
   title: string;
   topic: string;
@@ -144,6 +146,7 @@ export interface PersonalReportJson {
 export type ValidateErrorCode =
   | "EVENTS_OVER_LIMIT"
   | "FIVE_MINUTE_OVER_LIMIT"
+  | "FIVE_MINUTE_DUPLICATE_ID"
   | "MISSING_EVENT_ID"
   | "DUPLICATE_EVENT_ID"
   | "MISSING_EVENT_TIME"
@@ -162,6 +165,10 @@ export type ValidateErrorCode =
   | "FULL_REPORT_DUPLICATE_ID"
   | "ORPHAN_EVENT"
   | "EVENTS_FULLREPORT_COUNT_MISMATCH"
+  | "UNKNOWN_FILTER_EVENT_ID"
+  | "FILTER_EVENT_MULTI_MAPPED"
+  | "FILTER_EVENT_NOT_MAPPED"
+  | "SOURCE_LEAKED_FROM_OTHER_FILTER_EVENT"
   | "TOPIC_GROUP_INVALID_EVENT_ID";
 
 export interface ValidateResult {
@@ -867,9 +874,13 @@ export async function generatePersonalReport(
   json.coverageFrom = coverageFrom;
   json.coverageTo = coverageTo;
 
-  // Validate using only Stage 1 kept candidate URLs (not all original candidates)
-  const candidateUrlSet = buildKeptCandidateUrlSet(candidates, filterResult);
-  const validation = validateReport(json, config, candidateUrlSet);
+  // Validate using per-filterEventId URL sets (not a global whitelist)
+  const filterEventUrlMap = buildFilterEventUrlMap(candidates, filterResult);
+  const allKeptUrls = new Set<string>();
+  for (const urls of filterEventUrlMap.values()) {
+    for (const url of urls) allKeptUrls.add(url);
+  }
+  const validation = validateReport(json, config, allKeptUrls, filterEventUrlMap);
 
   if (!validation.ok) {
     console.error("  [personal] Validation failed:");
@@ -964,7 +975,8 @@ export function buildReportPrompt(
       });
 
       return (
-        `[Event ${i + 1}] ${event.title}\n` +
+        `[Event ${i + 1}] filterEventId: filter-event-${i + 1}\n` +
+        `  Title: ${event.title}\n` +
         `  Topic: ${event.topic}\n` +
         `  Relevance: ${event.relevance}\n` +
         `  Confidence: ${event.confidence}\n` +
@@ -1016,6 +1028,7 @@ ${eventBlocks}
   "events": [
     {
       "id": "evt-1",
+      "filterEventId": "filter-event-1",
       "title": "事件标题",
       "topic": "主题名",
       "eventTime": "2026-07-27T08:00:00Z",
@@ -1060,7 +1073,8 @@ ${eventBlocks}
 3. fiveMinuteBrief 的 eventIds 必须是 fullReport eventIds 的子集。
 4. 按动态主题组织，不按来源或项目机械分组。
 5. 每个事件必须有唯一的 id（格式 evt-N）。
-6. 每个事件必须有 eventTime（ISO-8601 格式）。
+6. 每个事件必须原样输出 filterEventId（格式 filter-event-N），不得修改。
+7. 每个事件必须有 eventTime（ISO-8601 格式）。
 7. 每个事件必须有 candidateIds。
 8. updateKind 必须是 "new"、"updated" 或 "snapshot-change"。
 9. status 必须是 "已确认" 或 "社区信号"。
@@ -1102,9 +1116,33 @@ export function buildCandidateUrlSet(candidates: MergedCandidate[]): Set<string>
 }
 
 /**
- * Build URL whitelist from only the Stage 1 kept candidates.
- * Maps keepIds/mergedIds (1-indexed) → candidate URLs.
+ * Build per-filterEventId URL whitelist from Stage 1 kept candidates.
+ * Returns a Map: filterEventId → Set of allowed URLs (sourceUrl + additionalSources).
+ * Each kept event gets a stable filterEventId: "filter-event-<1-indexed position in kept array>".
  */
+export function buildFilterEventUrlMap(
+  candidates: MergedCandidate[],
+  filterResult: FilterResult,
+): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (let i = 0; i < filterResult.kept.length; i++) {
+    const kept = filterResult.kept[i]!;
+    const filterEventId = `filter-event-${i + 1}`;
+    const urls = new Set<string>();
+    for (const id of [...kept.keepIds, ...(kept.mergedIds ?? [])]) {
+      const idx = Number(id) - 1;
+      const c = candidates[idx];
+      if (c) {
+        urls.add(c.sourceUrl);
+        for (const url of c.additionalSources) urls.add(url);
+      }
+    }
+    map.set(filterEventId, urls);
+  }
+  return map;
+}
+
+/** @deprecated Use buildFilterEventUrlMap for per-event validation. */
 export function buildKeptCandidateUrlSet(
   candidates: MergedCandidate[],
   filterResult: FilterResult,
@@ -1231,9 +1269,14 @@ export function validateReport(
   json: PersonalReportJson,
   config: PersonalReportConfig,
   candidateUrls: Set<string>,
+  filterEventUrlMap?: Map<string, Set<string>>,
 ): ValidateResult {
   const errors: ValidateResult["errors"] = [];
   const eventIds = new Set<string>();
+
+  // --- Build filterEventId → event mapping for 1:1 check ---
+  const filterEventIdUsed = new Map<string, string>(); // filterEventId → evt.id
+  const expectedFilterEventIds = filterEventUrlMap ? new Set(filterEventUrlMap.keys()) : null;
 
   // --- Validate each event ---
   for (const evt of json.events ?? []) {
@@ -1299,6 +1342,63 @@ export function validateReport(
         errors.push({
           code: "FABRICATED_URL",
           message: `candidateId not in kept whitelist: ${cid} (in: ${evt.title})`,
+        });
+      }
+    }
+    // filterEventId validation: bind event to its Stage 1 source (only when map provided)
+    if (filterEventUrlMap) {
+      if (!evt.filterEventId) {
+        errors.push({
+          code: "UNKNOWN_FILTER_EVENT_ID",
+          message: `event missing filterEventId: ${evt.title}`,
+        });
+      } else if (expectedFilterEventIds && !expectedFilterEventIds.has(evt.filterEventId)) {
+        errors.push({
+          code: "UNKNOWN_FILTER_EVENT_ID",
+          message: `unknown filterEventId: ${evt.filterEventId} (in: ${evt.title})`,
+        });
+      } else {
+        // Check 1:1 mapping — same filterEventId used by multiple events
+        const prevEvtId = filterEventIdUsed.get(evt.filterEventId);
+        if (prevEvtId && prevEvtId !== evt.id) {
+          errors.push({
+            code: "FILTER_EVENT_MULTI_MAPPED",
+            message: `filterEventId ${evt.filterEventId} used by multiple events: ${prevEvtId} and ${evt.id}`,
+          });
+        } else if (!prevEvtId) {
+          filterEventIdUsed.set(evt.filterEventId, evt.id);
+        }
+        // Check candidateIds belong to this filterEventId's URL set
+        const allowedUrls = filterEventUrlMap.get(evt.filterEventId);
+        if (allowedUrls) {
+          for (const cid of evt.candidateIds ?? []) {
+            if (!allowedUrls.has(cid)) {
+              errors.push({
+                code: "SOURCE_LEAKED_FROM_OTHER_FILTER_EVENT",
+                message: `candidateId ${cid} does not belong to ${evt.filterEventId} (in: ${evt.title})`,
+              });
+            }
+          }
+          for (const source of evt.sources ?? []) {
+            if (source.url && !allowedUrls.has(source.url)) {
+              errors.push({
+                code: "SOURCE_LEAKED_FROM_OTHER_FILTER_EVENT",
+                message: `source ${source.url} does not belong to ${evt.filterEventId} (in: ${evt.title})`,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // --- Check all Stage 1 kept events are mapped to exactly one final event ---
+  if (expectedFilterEventIds) {
+    for (const feid of expectedFilterEventIds) {
+      if (!filterEventIdUsed.has(feid)) {
+        errors.push({
+          code: "FILTER_EVENT_NOT_MAPPED",
+          message: `Stage 1 kept event ${feid} has no corresponding final event`,
         });
       }
     }
@@ -1381,9 +1481,11 @@ export function validateReport(
   }
 
   // --- Validate fiveMinuteBrief ---
+  const fiveMinuteAllIds: string[] = [];
   const fiveMinuteIds = new Set<string>();
   for (const group of json.fiveMinuteBrief?.topicGroups ?? []) {
     for (const id of group.eventIds ?? []) {
+      fiveMinuteAllIds.push(id);
       fiveMinuteIds.add(id);
       if (!eventIds.has(id)) {
         errors.push({
@@ -1394,6 +1496,15 @@ export function validateReport(
     }
   }
 
+  // Detect duplicate IDs in fiveMinuteBrief (same topic or cross-topic)
+  const fiveMinuteDupes = fiveMinuteAllIds.filter((id, i) => fiveMinuteAllIds.indexOf(id) !== i);
+  if (fiveMinuteDupes.length > 0) {
+    errors.push({
+      code: "FIVE_MINUTE_DUPLICATE_ID",
+      message: `fiveMinuteBrief has duplicate eventIds: ${[...new Set(fiveMinuteDupes)].join(", ")}`,
+    });
+  }
+
   // fiveMinute must be subset of fullReport
   for (const id of fiveMinuteIds) {
     if (!fullReportIds.has(id)) {
@@ -1401,11 +1512,11 @@ export function validateReport(
     }
   }
 
-  // fiveMinute limit
-  if (fiveMinuteIds.size > config.fiveMinuteLimit) {
+  // fiveMinute limit — count by total references, not unique set size
+  if (fiveMinuteAllIds.length > config.fiveMinuteLimit) {
     errors.push({
       code: "FIVE_MINUTE_OVER_LIMIT",
-      message: `fiveMinuteBrief has ${fiveMinuteIds.size} events, limit is ${config.fiveMinuteLimit}`,
+      message: `fiveMinuteBrief has ${fiveMinuteAllIds.length} events, limit is ${config.fiveMinuteLimit}`,
     });
   }
 

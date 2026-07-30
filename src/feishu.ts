@@ -20,6 +20,12 @@ import { NOTIFY_LABELS } from "./i18n.ts";
 import { PAGES_URL as SITE_PAGES_URL } from "./site.ts";
 import { guardReportSchema } from "./personal-report.ts";
 import type { PersonalReportJson } from "./personal-report.ts";
+import {
+  isAlreadySent,
+  recordSend,
+  makeNotificationKey,
+  makeFeishuIdempotencyKey,
+} from "./notification-state.ts";
 
 // ---------------------------------------------------------------------------
 // Notification dedup state
@@ -97,7 +103,7 @@ async function getTenantToken(): Promise<string> {
   return tokenCache.token;
 }
 
-async function sendViaOpenApi(card: unknown): Promise<void> {
+async function sendViaOpenApi(card: unknown, uuid?: string): Promise<void> {
   const chatId = process.env["FEISHU_CHAT_ID"] ?? "";
   if (!chatId) throw new Error("FEISHU_CHAT_ID is required");
 
@@ -113,6 +119,7 @@ async function sendViaOpenApi(card: unknown): Promise<void> {
       receive_id: chatId,
       msg_type: "interactive",
       content: JSON.stringify(card),
+      uuid: uuid || undefined,
     }),
   });
 
@@ -167,12 +174,12 @@ async function sendViaWebhooks(card: unknown): Promise<void> {
 // Unified send — prefers Open API, falls back to webhooks
 // ---------------------------------------------------------------------------
 
-async function sendCard(card: unknown): Promise<void> {
+async function sendCard(card: unknown, uuid?: string): Promise<void> {
   const hasApp = !!process.env["FEISHU_APP_ID"];
   const hasWebhook = getWebhookUrls().length > 0;
 
   if (hasApp) {
-    await sendViaOpenApi(card);
+    await sendViaOpenApi(card, uuid);
   } else if (hasWebhook) {
     await sendViaWebhooks(card);
   } else {
@@ -641,15 +648,14 @@ async function main(): Promise<void> {
 
   const PAGES_URL = SITE_PAGES_URL;
 
-  // Dedup check: skip if already sent for this date unless FORCE_SEND=true
-  const sendKey = makeSendKey(type, date);
-  const notifState = loadNotificationState();
+  // Dedup check using shared notification state
+  const channel = hasApp ? "feishu-openapi" : "feishu-webhook";
+  const destination = hasApp ? (process.env["FEISHU_CHAT_ID"] ?? "") : getWebhookUrls().join(",");
   const forceSend = process.env["FORCE_SEND"] === "true";
+  const notifKey = makeNotificationKey(channel, type, date, destination);
 
-  if (notifState.sent[sendKey] && !forceSend) {
-    console.log(
-      `[feishu] Already sent ${sendKey} at ${notifState.sent[sendKey]} — skipping. Use FORCE_SEND=true to resend.`,
-    );
+  if (isAlreadySent(notifKey) && !forceSend) {
+    console.log(`[feishu] Already sent ${notifKey} — skipping. Use FORCE_SEND=true to resend.`);
     return;
   }
 
@@ -664,11 +670,13 @@ async function main(): Promise<void> {
 
   const mode = hasApp ? "Open API" : `${webhooks.length} webhook(s)`;
   console.log(`[feishu] Sending ${type} card to ${mode} for ${date} (${reports.length} reports)…`);
-  await sendCard(card);
 
-  // Record successful send
-  notifState.sent[sendKey] = new Date().toISOString();
-  saveNotificationState(notifState);
+  // Generate deterministic uuid for Open API idempotency
+  const uuid = hasApp ? makeFeishuIdempotencyKey(type, date, destination) : undefined;
+  await sendCard(card, uuid);
+
+  // Record successful send using shared module
+  recordSend(notifKey);
 
   console.log("[feishu] Done!");
 }
