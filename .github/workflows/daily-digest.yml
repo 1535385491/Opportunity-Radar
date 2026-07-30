@@ -95,9 +95,15 @@ jobs:
       - name: Persist notification state
         if: always()
         run: |
-          git add digests/notification-state.json
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: persist notification state"
-            git pull --rebase
-            git push
+          if [ ! -f digests/notification-state.json ]; then
+            echo "No notification state file to persist — skipping."
+            exit 0
           fi
+          git add digests/notification-state.json
+          if git diff --cached --quiet; then
+            echo "Notification state unchanged — skipping commit."
+            exit 0
+          fi
+          git commit -m "chore: persist notification state"
+          git pull --rebase
+          git push

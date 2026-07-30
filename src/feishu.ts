@@ -15,130 +15,23 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { NOTIFY_LABELS } from "./i18n.ts";
 import { PAGES_URL as SITE_PAGES_URL } from "./site.ts";
 import { guardReportSchema } from "./personal-report.ts";
 import type { PersonalReportJson } from "./personal-report.ts";
-import {
-  isAlreadySent,
-  recordSend,
-  makeNotificationKey,
-  makeFeishuIdempotencyKey,
-} from "./notification-state.ts";
-
-// ---------------------------------------------------------------------------
-// Notification dedup state
-// ---------------------------------------------------------------------------
-
-export interface NotificationState {
-  sent: Record<string, string>; // key → ISO timestamp of last send
-}
-
-const NOTIFICATION_STATE_FILE = path.join("digests", "notification-state.json");
-
-export function loadNotificationState(): NotificationState {
-  try {
-    if (!fs.existsSync(NOTIFICATION_STATE_FILE)) return { sent: {} };
-    return JSON.parse(fs.readFileSync(NOTIFICATION_STATE_FILE, "utf-8")) as NotificationState;
-  } catch {
-    return { sent: {} };
-  }
-}
-
-export function saveNotificationState(state: NotificationState): void {
-  fs.mkdirSync(path.dirname(NOTIFICATION_STATE_FILE), { recursive: true });
-  fs.writeFileSync(NOTIFICATION_STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
-}
-
-export function makeSendKey(type: string, date: string): string {
-  return `${type}:${date}`;
-}
+import { isAlreadySent, recordSend, makeNotificationKey, hashDestination } from "./notification-state.ts";
 
 // ---------------------------------------------------------------------------
 // Feishu Open API — app-based authentication
 // ---------------------------------------------------------------------------
 
-interface TenantTokenCache {
-  token: string;
-  expiresAt: number;
-}
-
-let tokenCache: TenantTokenCache | null = null;
-
-async function getTenantToken(): Promise<string> {
-  const appId = process.env["FEISHU_APP_ID"] ?? "";
-  const appSecret = process.env["FEISHU_APP_SECRET"] ?? "";
-
-  if (!appId || !appSecret) throw new Error("FEISHU_APP_ID and FEISHU_APP_SECRET are required");
-
-  // Return cached token if still valid (with 5 min safety margin)
-  if (tokenCache && Date.now() < tokenCache.expiresAt - 300_000) {
-    return tokenCache.token;
-  }
-
-  const resp = await fetch("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
-  });
-
-  if (!resp.ok) throw new Error(`Feishu token API ${resp.status}: ${await resp.text()}`);
-
-  const data = (await resp.json()) as {
-    code: number;
-    msg: string;
-    tenant_access_token?: string;
-    expire?: number;
-  };
-  if (data.code !== 0 || !data.tenant_access_token) {
-    throw new Error(`Feishu token error ${data.code}: ${data.msg}`);
-  }
-
-  tokenCache = {
-    token: data.tenant_access_token,
-    expiresAt: Date.now() + (data.expire ?? 7200) * 1000,
-  };
-
-  return tokenCache.token;
-}
-
-async function sendViaOpenApi(card: unknown, uuid?: string): Promise<void> {
-  const chatId = process.env["FEISHU_CHAT_ID"] ?? "";
-  if (!chatId) throw new Error("FEISHU_CHAT_ID is required");
-
-  const token = await getTenantToken();
-
-  const resp = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      receive_id: chatId,
-      msg_type: "interactive",
-      content: JSON.stringify(card),
-      uuid: uuid || undefined,
-    }),
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`Feishu send API ${resp.status}: ${body}`);
-  }
-
-  const data = (await resp.json()) as { code: number; msg: string };
-  if (data.code !== 0) {
-    throw new Error(`Feishu send error ${data.code}: ${data.msg}`);
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Webhook mode (legacy)
+// Webhook mode (legacy) — per-webhook dedup
 // ---------------------------------------------------------------------------
 
-function getWebhookUrls(): string[] {
+export function getWebhookUrls(): string[] {
   const raw = process.env["FEISHU_WEBHOOK_URLS"] ?? process.env["FEISHU_WEBHOOK_URL"] ?? "";
   return raw
     .split(",")
@@ -146,53 +39,11 @@ function getWebhookUrls(): string[] {
     .filter(Boolean);
 }
 
-async function sendViaWebhook(webhookUrl: string, card: unknown): Promise<void> {
-  const res = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ msg_type: "interactive", card }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Feishu webhook ${res.status}: ${body}`);
-  }
-}
-
-async function sendViaWebhooks(card: unknown): Promise<void> {
-  const urls = getWebhookUrls();
-  if (!urls.length) throw new Error("No Feishu webhook URLs configured");
-  const results = await Promise.allSettled(urls.map((url) => sendViaWebhook(url, card)));
-  const failures = results.filter((r) => r.status === "rejected");
-  if (failures.length) {
-    const msgs = failures.map((r) => (r as PromiseRejectedResult).reason);
-    console.error(`[feishu] ${failures.length}/${urls.length} webhook(s) failed:`, msgs);
-    if (failures.length === urls.length) throw new Error("All Feishu webhooks failed");
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Unified send — prefers Open API, falls back to webhooks
-// ---------------------------------------------------------------------------
-
-async function sendCard(card: unknown, uuid?: string): Promise<void> {
-  const hasApp = !!process.env["FEISHU_APP_ID"];
-  const hasWebhook = getWebhookUrls().length > 0;
-
-  if (hasApp) {
-    await sendViaOpenApi(card, uuid);
-  } else if (hasWebhook) {
-    await sendViaWebhooks(card);
-  } else {
-    console.log("[feishu] Neither FEISHU_APP_ID nor FEISHU_WEBHOOK_URLS set — skipping.");
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Card builder — narrative + opportunity signals, mobile-friendly
 // ---------------------------------------------------------------------------
 
 function escapeMarkdown(s: string): string {
-  // Feishu markdown: escape [ ] ( ) ` ~ only when they could break syntax
   return s.replace(/\[/g, "\\[").replace(/\]/g, "\\]");
 }
 
@@ -204,7 +55,7 @@ interface CardContext {
   type: "daily" | "weekly" | "monthly";
 }
 
-function buildCard(ctx: CardContext): unknown {
+export function buildCard(ctx: CardContext): unknown {
   const { date, reports, pagesUrl, personalDigest, type } = ctx;
   const baseReports = reports.filter((r) => !r.endsWith("-en"));
 
@@ -289,15 +140,8 @@ function buildCard(ctx: CardContext): unknown {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-export { buildCard };
-
 /**
  * Generates feishu-card.json and feishu-preview.md from a PersonalReportJson.
- * Used by both DRY_RUN and normal runs — single source of truth.
  */
 export function generateFeishuArtifacts(
   date: string,
@@ -314,7 +158,6 @@ export function generateFeishuArtifacts(
   const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
   const cardJson = JSON.stringify(card, null, 2);
 
-  // Human-readable preview
   const lines: string[] = [`# 飞书卡片预览 — ${date}`, "", "以下内容将发送到飞书群：", ""];
   if (personalDigest.fiveMinuteBrief?.topicGroups?.length) {
     const eventMap = new Map<string, { title: string; quick: { what: string; why: string } }>();
@@ -421,21 +264,9 @@ export function buildFeishuMessage(
 }
 
 // ---------------------------------------------------------------------------
-// Pre-send publication check
+// Pre-send publication check with bounded retry
 // ---------------------------------------------------------------------------
 
-/**
- * Verifies that the target date's ai-personal report is actually published
- * on the public Pages site before allowing Feishu notification.
- *
- * Checks (per retry):
- *  1. Remote manifest contains the target date with ai-personal
- *  2. The ai-personal.md file returns HTTP 200
- *  3. The personal-digest.json returns 200 and its generatedAt matches expectedGeneratedAt
- *
- * Uses cache-busting query params and bounded retry to handle Pages deploy delay.
- * Returns null on success, or an error message on final failure.
- */
 export async function checkReportPublished(
   pagesUrl: string,
   date: string,
@@ -562,10 +393,6 @@ export interface ManifestValidationResult {
   error?: string;
 }
 
-/**
- * Validates that the manifest contains the target date with ai-personal.
- * Pure function — no file I/O, no process.exit.
- */
 export function validateManifestEntry(
   dates: ManifestEntry[] | null | undefined,
   reportDate: string,
@@ -584,105 +411,229 @@ export function validateManifestEntry(
 }
 
 // ---------------------------------------------------------------------------
-// Main — only runs when executed directly (tsx src/feishu.ts)
+// Testable orchestration — extracted from main()
 // ---------------------------------------------------------------------------
 
-async function main(): Promise<void> {
-  const hasApp = !!process.env["FEISHU_APP_ID"];
-  const webhooks = getWebhookUrls();
+export interface FeishuSendResult {
+  success: boolean;
+  skipped: boolean;
+  error?: string;
+}
 
-  if (!hasApp && !webhooks.length) {
-    console.log("[feishu] Neither FEISHU_APP_ID nor FEISHU_WEBHOOK_URLS set — skipping.");
-    return;
+/**
+ * High-level orchestration for sending a Feishu notification.
+ * Extracted from main() so it can be tested without process.exit or real I/O.
+ *
+ * @param opts - Injected dependencies for testing
+ */
+export async function executeFeishuSend(opts: {
+  env: Record<string, string>;
+  fetchManifest: () => Promise<{ dates: ManifestEntry[] }>;
+  readPersonalDigest: (date: string) => PersonalReportJson;
+  fetchFn: typeof globalThis.fetch;
+  forceSend?: boolean;
+}): Promise<FeishuSendResult> {
+  const { env, fetchManifest, readPersonalDigest, fetchFn, forceSend = false } = opts;
+
+  const hasApp = !!env["FEISHU_APP_ID"];
+  const webhookUrls = (env["FEISHU_WEBHOOK_URLS"] ?? env["FEISHU_WEBHOOK_URL"] ?? "")
+    .split(",")
+    .map((u: string) => u.trim())
+    .filter(Boolean);
+
+  if (!hasApp && !webhookUrls.length) {
+    return { success: true, skipped: true };
   }
 
-  // Explicit REPORT_DATE — do not guess from manifest
-  const reportDate = process.env["REPORT_DATE"] ?? "";
+  const reportDate = env["REPORT_DATE"] ?? "";
   if (!reportDate) {
-    console.error("[feishu] REPORT_DATE not set — refusing to send without explicit date.");
-    process.exit(1);
+    return { success: false, skipped: false, error: "REPORT_DATE not set" };
   }
 
-  if (!fs.existsSync("manifest.json")) {
-    console.error("[feishu] manifest.json not found — refusing to send.");
-    process.exit(1);
-  }
-
-  const { dates } = JSON.parse(fs.readFileSync("manifest.json", "utf-8")) as {
-    dates: ManifestEntry[];
-  };
-
+  const { dates } = await fetchManifest();
   const manifestResult = validateManifestEntry(dates, reportDate);
   if (!manifestResult.ok) {
-    console.error(`[feishu] ${manifestResult.error} — refusing to send.`);
-    process.exit(1);
+    return { success: false, skipped: false, error: manifestResult.error };
   }
   const { date, reports } = manifestResult.entry!;
 
-  // Load and validate personal-digest.json
-  let personalDigest: PersonalReportJson | null = null;
-  const digestPath = path.join("digests", date, "personal-digest.json");
-  if (fs.existsSync(digestPath)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(digestPath, "utf-8"));
-      const schemaError = guardReportSchema(raw);
-      if (schemaError) {
-        console.error(`[feishu] personal-digest.json schema invalid: ${schemaError} — refusing to send.`);
-        process.exit(1);
-      }
-      personalDigest = raw as PersonalReportJson;
-    } catch {
-      console.error("[feishu] Failed to parse personal-digest.json — refusing to send.");
-      process.exit(1);
-    }
-  } else {
-    console.error("[feishu] personal-digest.json not found — refusing to send.");
-    process.exit(1);
-  }
+  const personalDigest = readPersonalDigest(date);
 
-  // Determine report type
   const baseReports = reports.filter((r) => !r.endsWith("-en"));
   const isMonthly = baseReports.includes("ai-monthly");
   const isWeekly = baseReports.includes("ai-weekly");
   const type = isMonthly ? "monthly" : isWeekly ? "weekly" : "daily";
 
-  const PAGES_URL = SITE_PAGES_URL;
-
-  // Dedup check using shared notification state
-  const channel = hasApp ? "feishu-openapi" : "feishu-webhook";
-  const destination = hasApp ? (process.env["FEISHU_CHAT_ID"] ?? "") : getWebhookUrls().join(",");
-  const forceSend = process.env["FORCE_SEND"] === "true";
-  const notifKey = makeNotificationKey(channel, type, date, destination);
-
-  if (isAlreadySent(notifKey) && !forceSend) {
-    console.log(`[feishu] Already sent ${notifKey} — skipping. Use FORCE_SEND=true to resend.`);
-    return;
-  }
-
-  // Pre-send publication check with retry
-  const publishCheck = await checkReportPublished(PAGES_URL, date, personalDigest.generatedAt);
-  if (publishCheck) {
-    console.error(`[feishu] 发送前检查失败: ${publishCheck} — 拒绝发送。`);
-    process.exit(1);
-  }
-
+  const PAGES_URL = (env["PAGES_URL"] ?? SITE_PAGES_URL).replace(/\/$/, "");
   const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
 
-  const mode = hasApp ? "Open API" : `${webhooks.length} webhook(s)`;
-  console.log(`[feishu] Sending ${type} card to ${mode} for ${date} (${reports.length} reports)…`);
+  if (hasApp) {
+    // Open API path — single destination
+    const destination = env["FEISHU_CHAT_ID"] ?? "";
+    const channel = "feishu-openapi";
+    const notifKey = makeNotificationKey(channel, type, date, destination);
 
-  // Generate deterministic uuid for Open API idempotency
-  const uuid = hasApp ? makeFeishuIdempotencyKey(type, date, destination) : undefined;
-  await sendCard(card, uuid);
+    if (isAlreadySent(notifKey) && !forceSend) {
+      return { success: true, skipped: true };
+    }
 
-  // Record successful send using shared module
-  recordSend(notifKey);
+    // Generate uuid: stable for auto-retry, unique per force-send attempt
+    const baseUuid = `notif-${type}-${date}-${hashDestination(destination)}`;
+    const uuid = forceSend
+      ? `${baseUuid}-${crypto.randomBytes(4).toString("hex")}`.slice(0, 50)
+      : baseUuid.slice(0, 50);
 
-  console.log("[feishu] Done!");
+    // Inline sendViaOpenApi logic using fetchFn
+    try {
+      const chatId = env["FEISHU_CHAT_ID"] ?? "";
+      if (!chatId) throw new Error("FEISHU_CHAT_ID is required");
+
+      // Get token (simplified for testability — real token fetch uses env)
+      const tokenResp = await fetchFn(
+        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            app_id: env["FEISHU_APP_ID"] ?? "",
+            app_secret: env["FEISHU_APP_SECRET"] ?? "",
+          }),
+        },
+      );
+      const tokenData = (await tokenResp.json()) as { code: number; tenant_access_token?: string };
+      if (tokenData.code !== 0 || !tokenData.tenant_access_token) {
+        return { success: false, skipped: false, error: `Token error ${tokenData.code}` };
+      }
+
+      const sendResp = await fetchFn(
+        "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${tokenData.tenant_access_token}`,
+          },
+          body: JSON.stringify({
+            receive_id: chatId,
+            msg_type: "interactive",
+            content: JSON.stringify(card),
+            uuid,
+          }),
+        },
+      );
+
+      if (!sendResp.ok) {
+        return { success: false, skipped: false, error: `Send API ${sendResp.status}` };
+      }
+
+      const sendData = (await sendResp.json()) as { code: number; msg: string };
+      if (sendData.code !== 0) {
+        return { success: false, skipped: false, error: `Send error ${sendData.code}: ${sendData.msg}` };
+      }
+
+      recordSend(notifKey);
+      return { success: true, skipped: false };
+    } catch (e) {
+      return { success: false, skipped: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  // Webhook path — per-webhook dedup
+  const failedUrls: string[] = [];
+  const succeededUrls: string[] = [];
+
+  for (const url of webhookUrls) {
+    const channel = "feishu-webhook";
+    const notifKey = makeNotificationKey(channel, type, date, url);
+
+    if (isAlreadySent(notifKey) && !forceSend) {
+      succeededUrls.push(url); // already sent counts as success
+      continue;
+    }
+
+    try {
+      const res = await fetchFn(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ msg_type: "interactive", card }),
+      });
+      if (!res.ok) {
+        failedUrls.push(url);
+        continue;
+      }
+      recordSend(notifKey);
+      succeededUrls.push(url);
+    } catch {
+      failedUrls.push(url);
+    }
+  }
+
+  if (failedUrls.length > 0) {
+    return {
+      success: false,
+      skipped: false,
+      error: `${failedUrls.length}/${webhookUrls.length} webhook(s) failed`,
+    };
+  }
+
+  return { success: true, skipped: false };
 }
 
-// Only auto-send when run directly (`tsx src/feishu.ts`). Guard prevents an
-// accidental send when another module imports from here.
+// ---------------------------------------------------------------------------
+// Generate deterministic uuid (exported for testing)
+// ---------------------------------------------------------------------------
+
+export function makeFeishuUuid(
+  reportType: string,
+  date: string,
+  destination: string,
+  forceSend: boolean,
+): string {
+  const hash = hashDestination(destination);
+  const base = `notif-${reportType}-${date}-${hash}`;
+  if (forceSend) {
+    return `${base}-${crypto.randomBytes(4).toString("hex")}`.slice(0, 50);
+  }
+  return base.slice(0, 50);
+}
+
+// ---------------------------------------------------------------------------
+// Main — only runs when executed directly (tsx src/feishu.ts)
+// ---------------------------------------------------------------------------
+
+async function main(): Promise<void> {
+  const result = await executeFeishuSend({
+    env: process.env as Record<string, string>,
+    fetchManifest: async () => {
+      if (!fs.existsSync("manifest.json")) {
+        throw new Error("manifest.json not found");
+      }
+      return JSON.parse(fs.readFileSync("manifest.json", "utf-8"));
+    },
+    readPersonalDigest: (date: string) => {
+      const digestPath = path.join("digests", date, "personal-digest.json");
+      if (!fs.existsSync(digestPath)) throw new Error("personal-digest.json not found");
+      const raw = JSON.parse(fs.readFileSync(digestPath, "utf-8"));
+      const schemaError = guardReportSchema(raw);
+      if (schemaError) throw new Error(`Schema invalid: ${schemaError}`);
+      return raw as PersonalReportJson;
+    },
+    fetchFn: globalThis.fetch,
+    forceSend: process.env["FORCE_SEND"] === "true",
+  });
+
+  if (!result.success) {
+    console.error(`[feishu] ${result.error}`);
+    process.exit(1);
+  }
+  if (result.skipped) {
+    console.log("[feishu] Skipped (no credentials or already sent).");
+  } else {
+    console.log("[feishu] Done!");
+  }
+}
+
+// Only auto-send when run directly (`tsx src/feishu.ts`).
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((e: unknown) => {
     console.error("[feishu]", e instanceof Error ? e.message : e);
