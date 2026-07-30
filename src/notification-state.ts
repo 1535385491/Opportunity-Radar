@@ -5,10 +5,6 @@
  * across Telegram and Feishu channels.
  *
  * Key format: channel:reportType:date:destinationHash
- * - channel: "telegram" | "feishu-openapi" | "feishu-webhook"
- * - reportType: "daily" | "weekly" | "monthly"
- * - date: "YYYY-MM-DD"
- * - destinationHash: 12-char SHA-256 prefix (irreversible)
  */
 
 import crypto from "node:crypto";
@@ -18,8 +14,62 @@ import path from "node:path";
 const STATE_FILE = path.join("digests", "notification-state.json");
 
 export interface NotificationState {
-  sent: Record<string, string>; // key → ISO timestamp of last successful send
+  sent: Record<string, string>;
 }
+
+// ---------------------------------------------------------------------------
+// Store interface — injected into orchestration functions
+// ---------------------------------------------------------------------------
+
+export interface NotificationStateStore {
+  isAlreadySent(key: string): boolean;
+  recordSend(key: string): void;
+}
+
+/** Production store: reads/writes digests/notification-state.json */
+export function createProductionStore(): NotificationStateStore {
+  return {
+    isAlreadySent(key: string): boolean {
+      try {
+        if (!fs.existsSync(STATE_FILE)) return false;
+        const state = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8")) as NotificationState;
+        return !!state.sent[key];
+      } catch {
+        return false;
+      }
+    },
+    recordSend(key: string): void {
+      let state: NotificationState = { sent: {} };
+      try {
+        if (fs.existsSync(STATE_FILE)) {
+          state = JSON.parse(fs.readFileSync(STATE_FILE, "utf-8")) as NotificationState;
+        }
+      } catch {
+        // corrupt file, start fresh
+      }
+      state.sent[key] = new Date().toISOString();
+      fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+      fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
+    },
+  };
+}
+
+/** In-memory store for testing — no file I/O */
+export function createMemoryStore(initial?: Record<string, string>): NotificationStateStore {
+  const sent = new Map<string, string>(Object.entries(initial ?? {}));
+  return {
+    isAlreadySent(key: string): boolean {
+      return sent.has(key);
+    },
+    recordSend(key: string): void {
+      sent.set(key, new Date().toISOString());
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Legacy direct-access helpers (used only by CLI main wrappers)
+// ---------------------------------------------------------------------------
 
 export function loadNotificationState(): NotificationState {
   try {
@@ -35,17 +85,14 @@ export function saveNotificationState(state: NotificationState): void {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf-8");
 }
 
-/**
- * Hash a destination identifier (chat ID, webhook URL) to a short irreversible prefix.
- * Never stores the raw secret in the state file or logs.
- */
+// ---------------------------------------------------------------------------
+// Key/hash utilities (pure, no I/O)
+// ---------------------------------------------------------------------------
+
 export function hashDestination(destination: string): string {
   return crypto.createHash("sha256").update(destination).digest("hex").slice(0, 12);
 }
 
-/**
- * Build the dedup key for a notification.
- */
 export function makeNotificationKey(
   channel: string,
   reportType: string,
@@ -55,27 +102,6 @@ export function makeNotificationKey(
   return `${channel}:${reportType}:${date}:${hashDestination(destination)}`;
 }
 
-/**
- * Check if this notification has already been sent.
- */
-export function isAlreadySent(key: string): boolean {
-  const state = loadNotificationState();
-  return !!state.sent[key];
-}
-
-/**
- * Record a successful send.
- */
-export function recordSend(key: string): void {
-  const state = loadNotificationState();
-  state.sent[key] = new Date().toISOString();
-  saveNotificationState(state);
-}
-
-/**
- * Generate a deterministic UUID for Feishu Open API idempotency.
- * Format: notif-<channel>-<date>-<hash> (≤50 chars).
- */
 export function makeFeishuIdempotencyKey(reportType: string, date: string, destination: string): string {
   const hash = hashDestination(destination);
   return `notif-${reportType}-${date}-${hash}`.slice(0, 50);

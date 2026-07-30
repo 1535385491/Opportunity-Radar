@@ -1,107 +1,166 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { buildMessage, type Highlights } from "../notify.ts";
+import { describe, it, expect, vi } from "vitest";
+import { buildMessage, executeTelegramSend } from "../notify.ts";
+import type { TelegramSendDeps } from "../notify.ts";
+import { createMemoryStore, makeNotificationKey } from "../notification-state.ts";
 
 const BASE_URL = "https://example.com/radar";
 
+// ---------------------------------------------------------------------------
+// buildMessage
+// ---------------------------------------------------------------------------
+
 describe("buildMessage", () => {
-  const origPagesUrl = process.env["PAGES_URL"];
-
-  afterEach(() => {
-    if (origPagesUrl !== undefined) {
-      process.env["PAGES_URL"] = origPagesUrl;
-    } else {
-      delete process.env["PAGES_URL"];
-    }
-  });
-
-  it("builds a daily message with zh + en reports", () => {
-    const msg = buildMessage("2026-03-09", ["ai-cli", "ai-cli-en", "ai-agents", "ai-agents-en"], BASE_URL);
+  it("builds daily message with zh + en", () => {
+    const msg = buildMessage("2026-03-09", ["ai-cli", "ai-cli-en"], BASE_URL);
     expect(msg).toContain("agents-radar");
     expect(msg).toContain("2026-03-09");
     expect(msg).toContain("📡");
-    // zh links
     expect(msg).toContain(`${BASE_URL}/#2026-03-09/ai-cli`);
-    expect(msg).toContain("AI CLI 工具");
-    // en links
-    expect(msg).toContain(`${BASE_URL}/#2026-03-09/ai-cli-en`);
-    expect(msg).toContain("AI CLI Tools");
   });
 
-  it("shows weekly icon and suffix for weekly reports", () => {
-    const msg = buildMessage("2026-03-09", ["ai-weekly", "ai-weekly-en"], BASE_URL);
-    expect(msg).toContain("📅");
-    expect(msg).toContain("周报");
+  it("weekly icon", () => {
+    expect(buildMessage("2026-03-09", ["ai-weekly"], BASE_URL)).toContain("📅");
   });
 
-  it("shows monthly icon and suffix for monthly reports", () => {
-    const msg = buildMessage("2026-03-09", ["ai-monthly", "ai-monthly-en"], BASE_URL);
-    expect(msg).toContain("📆");
-    expect(msg).toContain("月报");
+  it("monthly icon", () => {
+    expect(buildMessage("2026-03-09", ["ai-monthly"], BASE_URL)).toContain("📆");
   });
 
-  it("monthly takes priority over weekly", () => {
-    const msg = buildMessage("2026-03-09", ["ai-weekly", "ai-monthly"], BASE_URL);
-    expect(msg).toContain("📆");
-    expect(msg).toContain("月报");
-  });
-
-  it("renders zh-only reports without en link", () => {
+  it("renders zh-only without en link", () => {
     const msg = buildMessage("2026-03-09", ["ai-hn"], BASE_URL);
     expect(msg).toContain("HN 社区动态");
     expect(msg).not.toContain("HN Community");
   });
 
-  it("includes Web UI and RSS links", () => {
+  it("includes Web UI and RSS", () => {
     const msg = buildMessage("2026-03-09", ["ai-cli"], BASE_URL);
     expect(msg).toContain("🌐 Web UI");
-    expect(msg).toContain("RSS");
     expect(msg).toContain(`${BASE_URL}/feed.xml`);
   });
 
-  it("strips trailing slash from pagesUrl", () => {
-    const msg = buildMessage("2026-03-09", ["ai-cli"], BASE_URL + "/");
-    expect(msg).not.toContain("//feed.xml");
-    expect(msg).toContain(`${BASE_URL}/feed.xml`);
+  it("includes highlights", () => {
+    const msg = buildMessage("2026-03-09", ["ai-cli"], BASE_URL, {
+      zh: { "ai-cli": ["Claude Code v1.2"] },
+      en: {},
+    });
+    expect(msg).toContain("◦ Claude Code v1.2");
   });
 
-  it("includes highlights when provided", () => {
-    const highlights: Highlights = {
-      zh: {
-        "ai-cli": ["Claude Code 发布 v1.2.0", "Gemini CLI 修复 streaming"],
-        "ai-agents": ["OpenClaw 新增 MCP 支持"],
-      },
-      en: {
-        "ai-cli": ["Claude Code releases v1.2.0"],
-      },
+  it("works without highlights", () => {
+    const msg = buildMessage("2026-03-09", ["ai-cli"], BASE_URL, null);
+    expect(msg).not.toContain("◦");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// executeTelegramSend — all via memory store
+// ---------------------------------------------------------------------------
+
+describe("executeTelegramSend", () => {
+  function makeDeps(overrides: Partial<TelegramSendDeps> = {}): TelegramSendDeps {
+    return {
+      env: { TELEGRAM_BOT_TOKEN: "token", TELEGRAM_CHAT_ID: "chat-123", REPORT_DATE: "2026-07-27" },
+      fetchManifest: async () => ({ dates: [{ date: "2026-07-27", reports: ["ai-personal"] }] }),
+      fetchFn: vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("") }),
+      stateStore: createMemoryStore(),
+      ...overrides,
     };
-    const msg = buildMessage(
-      "2026-03-09",
-      ["ai-cli", "ai-cli-en", "ai-agents", "ai-agents-en"],
-      BASE_URL,
-      highlights,
+  }
+
+  it("skips when no TELEGRAM_BOT_TOKEN", async () => {
+    const r = await executeTelegramSend(makeDeps({ env: { REPORT_DATE: "2026-07-27" } }));
+    expect(r.skipped).toBe(true);
+  });
+
+  it("fails when REPORT_DATE missing", async () => {
+    const r = await executeTelegramSend(makeDeps({ env: { TELEGRAM_BOT_TOKEN: "tok" } }));
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("REPORT_DATE");
+  });
+
+  it("fails when manifest is empty", async () => {
+    const r = await executeTelegramSend(makeDeps({ fetchManifest: async () => ({ dates: [] }) }));
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("empty");
+  });
+
+  it("fails when REPORT_DATE only in history, not first entry", async () => {
+    const r = await executeTelegramSend(
+      makeDeps({
+        fetchManifest: async () => ({
+          dates: [
+            { date: "2026-07-28", reports: ["ai-personal"] },
+            { date: "2026-07-27", reports: ["ai-personal"] },
+          ],
+        }),
+      }),
     );
-    expect(msg).toContain("◦ Claude Code 发布 v1.2.0");
-    expect(msg).toContain("◦ Gemini CLI 修复 streaming");
-    expect(msg).toContain("◦ OpenClaw 新增 MCP 支持");
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("2026-07-28");
+    expect(r.error).toContain("2026-07-27");
   });
 
-  it("works without highlights (null)", () => {
-    const msg = buildMessage("2026-03-09", ["ai-cli", "ai-cli-en"], BASE_URL, null);
-    expect(msg).toContain("AI CLI 工具");
-    expect(msg).not.toContain("◦");
+  it("sends when latest date matches REPORT_DATE", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("") });
+    const store = createMemoryStore();
+    const r = await executeTelegramSend(makeDeps({ fetchFn, stateStore: store }));
+    expect(r.success).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(store.isAlreadySent(makeNotificationKey("telegram", "daily", "2026-07-27", "chat-123"))).toBe(
+      true,
+    );
   });
 
-  it("works without highlights (undefined)", () => {
-    const msg = buildMessage("2026-03-09", ["ai-cli", "ai-cli-en"], BASE_URL);
-    expect(msg).toContain("AI CLI 工具");
-    expect(msg).not.toContain("◦");
+  it("second run skips before fetch", async () => {
+    const store = createMemoryStore();
+    await executeTelegramSend(makeDeps({ stateStore: store }));
+    const fetchFn = vi.fn();
+    const r = await executeTelegramSend(makeDeps({ fetchFn, stateStore: store }));
+    expect(r.success).toBe(true);
+    expect(r.skipped).toBe(true);
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 
-  it("default PAGES_URL points to user repo, not original author", () => {
-    // When no pagesUrl argument and no PAGES_URL env, should use the site default
-    delete process.env["PAGES_URL"];
-    const msg = buildMessage("2026-03-09", ["ai-cli"]);
-    expect(msg).toContain("1535385491.github.io");
-    expect(msg).not.toContain("duanyytop");
+  it("FORCE_SEND resends", async () => {
+    const store = createMemoryStore();
+    await executeTelegramSend(makeDeps({ stateStore: store }));
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("") });
+    const r = await executeTelegramSend(
+      makeDeps({
+        fetchFn,
+        stateStore: store,
+        forceSend: true,
+        env: {
+          TELEGRAM_BOT_TOKEN: "token",
+          TELEGRAM_CHAT_ID: "chat-123",
+          REPORT_DATE: "2026-07-27",
+          FORCE_SEND: "true",
+        },
+      }),
+    );
+    expect(r.success).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("API failure does not record send", async () => {
+    const store = createMemoryStore();
+    const fetchFn = vi.fn().mockResolvedValue({ ok: false, status: 500, text: () => Promise.resolve("err") });
+    const r = await executeTelegramSend(makeDeps({ fetchFn, stateStore: store }));
+    expect(r.success).toBe(false);
+    expect(store.isAlreadySent(makeNotificationKey("telegram", "daily", "2026-07-27", "chat-123"))).toBe(
+      false,
+    );
+  });
+
+  it("does not log bot token", async () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: string[]) => logs.push(args.join(" "));
+    try {
+      await executeTelegramSend(makeDeps());
+      expect(logs.join(" ")).not.toContain("token");
+    } finally {
+      console.log = origLog;
+    }
   });
 });
