@@ -24,6 +24,7 @@ import {
   buildKeptCandidateUrlSet,
   validateReport,
   validateFilterResult,
+  guardReportSchema,
   generateNoUpdateReport,
   renderPersonalReportMarkdown,
   capFilterResult,
@@ -1365,5 +1366,136 @@ describe("validateReport — candidate URL uniqueness", () => {
     const result = validateReport(json, DEFAULT_CONFIG, urls);
     expect(result.ok).toBe(false);
     expect(result.errors.some((e) => e.message.includes("kept whitelist"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// guardReportSchema — generatedAt validation
+// ---------------------------------------------------------------------------
+
+describe("guardReportSchema — generatedAt", () => {
+  const VALID_BASE = {
+    events: [],
+    toolStatus: { codex: "ok", "claude-code": "ok" },
+    fiveMinuteBrief: { topicGroups: [] },
+    fullReport: { topicGroups: [] },
+    coverageFrom: "2026-07-23T00:00:00Z",
+    coverageTo: "2026-07-27T00:00:00Z",
+  };
+
+  it("rejects when generatedAt is missing", () => {
+    const result = guardReportSchema(VALID_BASE);
+    expect(result).not.toBeNull();
+    expect(result).toContain("generatedAt");
+  });
+
+  it("rejects when generatedAt is empty string", () => {
+    const result = guardReportSchema({ ...VALID_BASE, generatedAt: "" });
+    expect(result).not.toBeNull();
+    expect(result).toContain("generatedAt");
+  });
+
+  it("rejects when generatedAt is not valid ISO-8601", () => {
+    const result = guardReportSchema({ ...VALID_BASE, generatedAt: "not-a-date" });
+    expect(result).not.toBeNull();
+    expect(result).toContain("generatedAt");
+  });
+
+  it("accepts valid ISO-8601 generatedAt", () => {
+    const result = guardReportSchema({ ...VALID_BASE, generatedAt: "2026-07-27T08:00:00Z" });
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateFilterResult — ID normalization
+// ---------------------------------------------------------------------------
+
+describe("validateFilterResult — ID normalization", () => {
+  function makeKept(overrides: Partial<FilterResultItem> = {}): FilterResultItem {
+    return {
+      title: "Event",
+      keepIds: ["1"],
+      mergedIds: [],
+      topic: "T",
+      relevance: "R",
+      confidence: "high",
+      reason: "R",
+      needsContext: false,
+      ...overrides,
+    };
+  }
+
+  it('"01" is rejected as invalid (leading zero), not silently normalized', () => {
+    const result = validateFilterResult(
+      { kept: [makeKept({ keepIds: ["01"] })], excluded: [{ id: "1", reason: "low" }] },
+      5,
+    );
+    // "01" has leading zero → rejected as invalid
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "FILTER_INVALID_CANDIDATE_ID")).toBe(true);
+  });
+
+  it("number 1 and string '1' are the same candidate", () => {
+    const result = validateFilterResult(
+      { kept: [makeKept({ keepIds: ["1"] })], excluded: [{ id: 1 as unknown as string, reason: "low" }] },
+      5,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "FILTER_KEPT_EXCLUDED_OVERLAP")).toBe(true);
+  });
+
+  it("rejects invalid excluded ID", () => {
+    const result = validateFilterResult({ kept: [makeKept()], excluded: [{ id: "abc", reason: "low" }] }, 5);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.code === "FILTER_INVALID_CANDIDATE_ID")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateReport — URL uniqueness uses evt.id not title
+// ---------------------------------------------------------------------------
+
+describe("validateReport — URL uniqueness by event ID", () => {
+  it("detects duplicate URL across events with same title but different IDs", () => {
+    const sharedUrl = "https://example.com/shared";
+    const json: PersonalReportJson = {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "ok", "claude-code": "ok" },
+      events: [
+        {
+          id: "evt-1",
+          title: "Same Title",
+          topic: "T",
+          eventTime: "2026-07-27T08:00:00Z",
+          updateKind: "new",
+          status: "已确认",
+          quick: { what: "w", why: "y", impact: "i", action: "a" },
+          full: { background: "b", evidence: "e", analysis: "a", impact: "i", action: "a" },
+          candidateIds: [sharedUrl],
+          sources: [{ name: "S", url: sharedUrl }],
+        },
+        {
+          id: "evt-2",
+          title: "Same Title",
+          topic: "T",
+          eventTime: "2026-07-27T09:00:00Z",
+          updateKind: "new",
+          status: "已确认",
+          quick: { what: "w", why: "y", impact: "i", action: "a" },
+          full: { background: "b", evidence: "e", analysis: "a", impact: "i", action: "a" },
+          candidateIds: [sharedUrl],
+          sources: [{ name: "S", url: sharedUrl }],
+        },
+      ],
+      fiveMinuteBrief: { topicGroups: [{ name: "T", eventIds: ["evt-1"] }] },
+      fullReport: { topicGroups: [{ name: "T", eventIds: ["evt-1", "evt-2"] }] },
+    };
+    const urls = new Set([sharedUrl]);
+    const result = validateReport(json, DEFAULT_CONFIG, urls);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.message.includes("multiple events"))).toBe(true);
   });
 });

@@ -195,6 +195,14 @@ export function guardReportSchema(json: unknown): string | null {
   if (!obj["fullReport"] || typeof obj["fullReport"] !== "object") return "fullReport missing";
   if (!obj["coverageFrom"] || !obj["coverageTo"]) return "coverage metadata missing";
 
+  // generatedAt must be present, non-empty, and valid ISO-8601
+  if (typeof obj["generatedAt"] !== "string" || !(obj["generatedAt"] as string).trim()) {
+    return "generatedAt missing or empty";
+  }
+  if (isNaN(Date.parse(obj["generatedAt"] as string))) {
+    return `generatedAt is not valid ISO-8601: ${obj["generatedAt"]}`;
+  }
+
   const fiveMinuteBrief = obj["fiveMinuteBrief"] as Record<string, unknown>;
   const fullReport = obj["fullReport"] as Record<string, unknown>;
   if (!Array.isArray(fiveMinuteBrief["topicGroups"])) return "fiveMinuteBrief.topicGroups missing";
@@ -1126,10 +1134,32 @@ export interface FilterValidateResult {
 }
 
 /**
+ * Normalizes a candidate ID to a canonical string form.
+ * Accepts positive integers as number or string (e.g. 1, "1").
+ * Rejects zero-padded strings like "01", negative numbers, non-numeric strings.
+ * Returns the canonical string (e.g. "1") or null if invalid.
+ */
+export function normalizeCandidateId(id: unknown): string | null {
+  if (typeof id === "number") {
+    if (!Number.isInteger(id) || id < 1) return null;
+    return String(id);
+  }
+  if (typeof id === "string") {
+    // Reject leading zeros (e.g. "01")
+    if (/^0\d+/.test(id)) return null;
+    const num = Number(id);
+    if (!Number.isInteger(num) || num < 1) return null;
+    return String(num);
+  }
+  return null;
+}
+
+/**
  * Validates Stage 1 FilterResult against the input candidates.
  * - keepIds/mergedIds must reference valid 1-indexed positions
  * - No candidate can be in both kept and excluded
  * - No candidate can be assigned to multiple kept events
+ * - All IDs are normalized to canonical form before comparison
  */
 export function validateFilterResult(
   filterResult: FilterResult,
@@ -1139,9 +1169,17 @@ export function validateFilterResult(
   const keptIds = new Set<string>();
   const excludedIds = new Set<string>();
 
-  // Build excluded set
+  // Build excluded set with normalized IDs
   for (const ex of filterResult.excluded ?? []) {
-    excludedIds.add(String(ex.id));
+    const normalized = normalizeCandidateId(ex.id);
+    if (normalized === null) {
+      errors.push({
+        code: "FILTER_INVALID_CANDIDATE_ID",
+        message: `excluded entry has invalid candidate ID: ${ex.id}`,
+      });
+      continue;
+    }
+    excludedIds.add(normalized);
   }
 
   // Track all candidate IDs assigned to kept events
@@ -1150,27 +1188,26 @@ export function validateFilterResult(
   for (const kept of filterResult.kept) {
     const allIds = [...kept.keepIds, ...(kept.mergedIds ?? [])];
     for (const id of allIds) {
-      const numId = Number(id);
-      if (!Number.isInteger(numId) || numId < 1 || numId > candidateCount) {
+      const normalized = normalizeCandidateId(id);
+      if (normalized === null || Number(normalized) > candidateCount) {
         errors.push({
           code: "FILTER_INVALID_CANDIDATE_ID",
           message: `kept event "${kept.title}" references invalid candidate ID: ${id}`,
         });
         continue;
       }
-      const strId = String(id);
       // Check overlap with excluded
-      if (excludedIds.has(strId)) {
+      if (excludedIds.has(normalized)) {
         errors.push({
           code: "FILTER_KEPT_EXCLUDED_OVERLAP",
-          message: `candidate ${id} is in both kept ("${kept.title}") and excluded`,
+          message: `candidate ${normalized} is in both kept ("${kept.title}") and excluded`,
         });
       }
       // Check duplicate assignment across kept events
-      if (keptIds.has(strId)) {
-        assignedToMultiple.push(strId);
+      if (keptIds.has(normalized)) {
+        assignedToMultiple.push(normalized);
       }
-      keptIds.add(strId);
+      keptIds.add(normalized);
     }
   }
 
@@ -1268,17 +1305,17 @@ export function validateReport(
   }
 
   // --- Candidate URL uniqueness: same URL must not appear in multiple events ---
-  const consumedUrls = new Map<string, string>(); // url → first event title
+  const consumedUrls = new Map<string, { eventId: string; title: string }>();
   for (const evt of json.events ?? []) {
     for (const cid of evt.candidateIds ?? []) {
       const prev = consumedUrls.get(cid);
-      if (prev && prev !== evt.title) {
+      if (prev && prev.eventId !== evt.id) {
         errors.push({
           code: "FABRICATED_URL",
-          message: `candidate URL consumed by multiple events: ${cid} (${prev} and ${evt.title})`,
+          message: `candidate URL consumed by multiple events: ${cid} (${prev.title} and ${evt.title})`,
         });
       } else if (!prev) {
-        consumedUrls.set(cid, evt.title);
+        consumedUrls.set(cid, { eventId: evt.id, title: evt.title });
       }
     }
   }

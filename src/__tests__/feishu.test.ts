@@ -217,10 +217,22 @@ describe("checkReportPublished", () => {
       if (url.includes("ai-personal.md")) {
         return Promise.resolve({ ok: true });
       }
+      if (url.includes("personal-digest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ generatedAt: "2026-07-27T08:00:00Z" }),
+        });
+      }
       return Promise.resolve({ ok: false, status: 404 });
     });
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 1, 0);
+    const result = await checkReportPublished(
+      "https://example.com/pages",
+      "2026-07-27",
+      "2026-07-27T08:00:00Z",
+      1,
+      0,
+    );
     expect(result).toBeNull();
   });
 
@@ -235,7 +247,13 @@ describe("checkReportPublished", () => {
       return Promise.resolve({ ok: false, status: 404 });
     });
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 1, 0);
+    const result = await checkReportPublished(
+      "https://example.com/pages",
+      "2026-07-27",
+      "2026-07-27T08:00:00Z",
+      1,
+      0,
+    );
     expect(result).toContain("不包含 2026-07-27");
   });
 
@@ -250,7 +268,13 @@ describe("checkReportPublished", () => {
       return Promise.resolve({ ok: false, status: 404 });
     });
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 1, 0);
+    const result = await checkReportPublished(
+      "https://example.com/pages",
+      "2026-07-27",
+      "2026-07-27T08:00:00Z",
+      1,
+      0,
+    );
     expect(result).toContain("不包含 ai-personal");
   });
 
@@ -268,7 +292,13 @@ describe("checkReportPublished", () => {
       return Promise.resolve({ ok: false, status: 404 });
     });
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 1, 0);
+    const result = await checkReportPublished(
+      "https://example.com/pages",
+      "2026-07-27",
+      "2026-07-27T08:00:00Z",
+      1,
+      0,
+    );
     expect(result).toContain("ai-personal.md");
     expect(result).toContain("404");
   });
@@ -276,7 +306,13 @@ describe("checkReportPublished", () => {
   it("returns error when manifest fetch fails", async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error("network error"));
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 1, 0);
+    const result = await checkReportPublished(
+      "https://example.com/pages",
+      "2026-07-27",
+      "2026-07-27T08:00:00Z",
+      1,
+      0,
+    );
     expect(result).toContain("异常");
   });
 
@@ -294,10 +330,22 @@ describe("checkReportPublished", () => {
       if (url.includes("ai-personal.md")) {
         return Promise.resolve({ ok: true });
       }
+      if (url.includes("personal-digest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ generatedAt: "2026-07-27T08:00:00Z" }),
+        });
+      }
       return Promise.resolve({ ok: false, status: 404 });
     });
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 3, 0);
+    const result = await checkReportPublished(
+      "https://example.com/pages",
+      "2026-07-27",
+      "2026-07-27T08:00:00Z",
+      3,
+      0,
+    );
     expect(result).toBeNull();
   });
 
@@ -476,6 +524,49 @@ describe("validateManifestEntry", () => {
     expect(result.ok).toBe(true);
     expect(result.entry!.date).toBe("2026-07-27");
     expect(result.entry!.reports).toContain("ai-personal");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkReportPublished — generatedAt fail-closed
+// ---------------------------------------------------------------------------
+
+describe("checkReportPublished — generatedAt required", () => {
+  const origFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = origFetch;
+  });
+
+  it("rejects empty expectedGeneratedAt without attempting fetch", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", "", 1, 0);
+    expect(result).not.toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects when remote personal-digest.json returns unparseable body", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("manifest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ dates: [{ date: "2026-07-27", reports: ["ai-personal"] }] }),
+        });
+      }
+      if (url.includes("ai-personal.md")) return Promise.resolve({ ok: true });
+      if (url.includes("personal-digest.json")) {
+        return Promise.resolve({ ok: true, json: () => Promise.reject(new Error("bad json")) });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
+    const result = await checkReportPublished(
+      "https://example.com/pages",
+      "2026-07-27",
+      "2026-07-27T12:00:00Z",
+      1,
+      0,
+    );
+    expect(result).toContain("异常");
   });
 });
 

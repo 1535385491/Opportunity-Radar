@@ -432,10 +432,14 @@ export function buildFeishuMessage(
 export async function checkReportPublished(
   pagesUrl: string,
   date: string,
-  expectedGeneratedAt?: string,
+  expectedGeneratedAt: string,
   maxRetries = 6,
   intervalMs = 10_000,
 ): Promise<string | null> {
+  if (!expectedGeneratedAt || !expectedGeneratedAt.trim()) {
+    return "expectedGeneratedAt 为空，拒绝发送";
+  }
+
   const base = pagesUrl.replace(/\/$/, "");
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -494,38 +498,36 @@ export async function checkReportPublished(
     }
 
     // 3. Check personal-digest.json generatedAt matches
-    if (expectedGeneratedAt) {
-      try {
-        const res = await fetch(`${base}/digests/${date}/personal-digest.json?_=${bust}`);
-        if (!res.ok) {
-          if (attempt < maxRetries) {
-            await delay(intervalMs);
-            continue;
-          }
-          return `personal-digest.json 请求失败 (${res.status})（重试 ${maxRetries} 次后）`;
-        }
-        const remoteJson = (await res.json()) as { generatedAt?: string };
-        if (!remoteJson.generatedAt) {
-          if (attempt < maxRetries) {
-            await delay(intervalMs);
-            continue;
-          }
-          return `远端 personal-digest.json 缺少 generatedAt（重试 ${maxRetries} 次后）`;
-        }
-        if (remoteJson.generatedAt !== expectedGeneratedAt) {
-          if (attempt < maxRetries) {
-            await delay(intervalMs);
-            continue;
-          }
-          return `远端 generatedAt 不一致：期望 ${expectedGeneratedAt}，实际 ${remoteJson.generatedAt}（重试 ${maxRetries} 次后）`;
-        }
-      } catch (e) {
+    try {
+      const res = await fetch(`${base}/digests/${date}/personal-digest.json?_=${bust}`);
+      if (!res.ok) {
         if (attempt < maxRetries) {
           await delay(intervalMs);
           continue;
         }
-        return `personal-digest.json 请求异常: ${e instanceof Error ? e.message : String(e)}`;
+        return `personal-digest.json 请求失败 (${res.status})（重试 ${maxRetries} 次后）`;
       }
+      const remoteJson = (await res.json()) as { generatedAt?: string };
+      if (!remoteJson.generatedAt) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `远端 personal-digest.json 缺少 generatedAt（重试 ${maxRetries} 次后）`;
+      }
+      if (remoteJson.generatedAt !== expectedGeneratedAt) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `远端 generatedAt 不一致：期望 ${expectedGeneratedAt}，实际 ${remoteJson.generatedAt}（重试 ${maxRetries} 次后）`;
+      }
+    } catch (e) {
+      if (attempt < maxRetries) {
+        await delay(intervalMs);
+        continue;
+      }
+      return `personal-digest.json 请求异常: ${e instanceof Error ? e.message : String(e)}`;
     }
 
     return null; // success
