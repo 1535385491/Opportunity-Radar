@@ -832,6 +832,16 @@ export async function generatePersonalReport(
     `  [personal] Filter: ${filterResult.kept.length} events kept, ${filterResult.excluded?.length ?? 0} excluded`,
   );
 
+  // Validate Stage 1 filter result integrity
+  const filterValidation = validateFilterResult(filterResult, candidates.length);
+  if (!filterValidation.ok) {
+    console.error("  [personal] Stage 1 filter validation failed:");
+    for (const err of filterValidation.errors) {
+      console.error(`    ${err.code}: ${err.message}`);
+    }
+    return null;
+  }
+
   // Stage 2: Generate report from filtered events
   console.log("  [personal] Stage 2: generating structured report...");
   const reportPrompt = buildReportPrompt(candidates, filterResult, config, coverageFrom, coverageTo);
@@ -849,8 +859,8 @@ export async function generatePersonalReport(
   json.coverageFrom = coverageFrom;
   json.coverageTo = coverageTo;
 
-  // Validate
-  const candidateUrlSet = buildCandidateUrlSet(candidates);
+  // Validate using only Stage 1 kept candidate URLs (not all original candidates)
+  const candidateUrlSet = buildKeptCandidateUrlSet(candidates, filterResult);
   const validation = validateReport(json, config, candidateUrlSet);
 
   if (!validation.ok) {
@@ -1083,6 +1093,97 @@ export function buildCandidateUrlSet(candidates: MergedCandidate[]): Set<string>
   return urls;
 }
 
+/**
+ * Build URL whitelist from only the Stage 1 kept candidates.
+ * Maps keepIds/mergedIds (1-indexed) → candidate URLs.
+ */
+export function buildKeptCandidateUrlSet(
+  candidates: MergedCandidate[],
+  filterResult: FilterResult,
+): Set<string> {
+  const urls = new Set<string>();
+  for (const kept of filterResult.kept) {
+    for (const id of [...kept.keepIds, ...(kept.mergedIds ?? [])]) {
+      const idx = Number(id) - 1;
+      const c = candidates[idx];
+      if (c) {
+        urls.add(c.sourceUrl);
+        for (const url of c.additionalSources) urls.add(url);
+      }
+    }
+  }
+  return urls;
+}
+
+export type FilterValidateErrorCode =
+  | "FILTER_INVALID_CANDIDATE_ID"
+  | "FILTER_KEPT_EXCLUDED_OVERLAP"
+  | "FILTER_DUPLICATE_CANDIDATE_ASSIGNMENT";
+
+export interface FilterValidateResult {
+  ok: boolean;
+  errors: Array<{ code: FilterValidateErrorCode; message: string }>;
+}
+
+/**
+ * Validates Stage 1 FilterResult against the input candidates.
+ * - keepIds/mergedIds must reference valid 1-indexed positions
+ * - No candidate can be in both kept and excluded
+ * - No candidate can be assigned to multiple kept events
+ */
+export function validateFilterResult(
+  filterResult: FilterResult,
+  candidateCount: number,
+): FilterValidateResult {
+  const errors: FilterValidateResult["errors"] = [];
+  const keptIds = new Set<string>();
+  const excludedIds = new Set<string>();
+
+  // Build excluded set
+  for (const ex of filterResult.excluded ?? []) {
+    excludedIds.add(String(ex.id));
+  }
+
+  // Track all candidate IDs assigned to kept events
+  const assignedToMultiple: string[] = [];
+
+  for (const kept of filterResult.kept) {
+    const allIds = [...kept.keepIds, ...(kept.mergedIds ?? [])];
+    for (const id of allIds) {
+      const numId = Number(id);
+      if (!Number.isInteger(numId) || numId < 1 || numId > candidateCount) {
+        errors.push({
+          code: "FILTER_INVALID_CANDIDATE_ID",
+          message: `kept event "${kept.title}" references invalid candidate ID: ${id}`,
+        });
+        continue;
+      }
+      const strId = String(id);
+      // Check overlap with excluded
+      if (excludedIds.has(strId)) {
+        errors.push({
+          code: "FILTER_KEPT_EXCLUDED_OVERLAP",
+          message: `candidate ${id} is in both kept ("${kept.title}") and excluded`,
+        });
+      }
+      // Check duplicate assignment across kept events
+      if (keptIds.has(strId)) {
+        assignedToMultiple.push(strId);
+      }
+      keptIds.add(strId);
+    }
+  }
+
+  if (assignedToMultiple.length > 0) {
+    errors.push({
+      code: "FILTER_DUPLICATE_CANDIDATE_ASSIGNMENT",
+      message: `candidates assigned to multiple kept events: ${[...new Set(assignedToMultiple)].join(", ")}`,
+    });
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
 const VALID_STATUSES = new Set(["已确认", "社区信号"]);
 const VALID_UPDATE_KINDS = new Set(["new", "updated", "snapshot-change"]);
 
@@ -1154,6 +1255,31 @@ export function validateReport(
     // Candidate IDs
     if (!evt.candidateIds || evt.candidateIds.length === 0) {
       errors.push({ code: "MISSING_CANDIDATE_IDS", message: `event missing candidateIds: ${evt.title}` });
+    }
+    // candidateIds must be in the kept whitelist
+    for (const cid of evt.candidateIds ?? []) {
+      if (!candidateUrls.has(cid)) {
+        errors.push({
+          code: "FABRICATED_URL",
+          message: `candidateId not in kept whitelist: ${cid} (in: ${evt.title})`,
+        });
+      }
+    }
+  }
+
+  // --- Candidate URL uniqueness: same URL must not appear in multiple events ---
+  const consumedUrls = new Map<string, string>(); // url → first event title
+  for (const evt of json.events ?? []) {
+    for (const cid of evt.candidateIds ?? []) {
+      const prev = consumedUrls.get(cid);
+      if (prev && prev !== evt.title) {
+        errors.push({
+          code: "FABRICATED_URL",
+          message: `candidate URL consumed by multiple events: ${cid} (${prev} and ${evt.title})`,
+        });
+      } else if (!prev) {
+        consumedUrls.set(cid, evt.title);
+      }
     }
   }
 

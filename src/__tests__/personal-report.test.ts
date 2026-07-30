@@ -21,13 +21,21 @@ import {
   buildFilterPrompt,
   buildReportPrompt,
   buildCandidateUrlSet,
+  buildKeptCandidateUrlSet,
   validateReport,
+  validateFilterResult,
   generateNoUpdateReport,
   renderPersonalReportMarkdown,
   capFilterResult,
   CATEGORY_LIMITS,
 } from "../personal-report.ts";
-import type { CandidateItem, MergedCandidate, FilterResult, PersonalReportJson } from "../personal-report.ts";
+import type {
+  CandidateItem,
+  MergedCandidate,
+  FilterResult,
+  FilterResultItem,
+  PersonalReportJson,
+} from "../personal-report.ts";
 import type { PersonalReportConfig } from "../config.ts";
 import type { RepoFetch } from "../github.ts";
 
@@ -1178,5 +1186,184 @@ describe("buildReportPrompt — full fields required", () => {
     const filterResult: FilterResult = { kept: [], excluded: [] };
     const prompt = buildReportPrompt(candidates, filterResult, DEFAULT_CONFIG, "2026-07-25", "2026-07-27");
     expect(prompt).toContain("必须非空");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateFilterResult — Stage 1 integrity
+// ---------------------------------------------------------------------------
+
+describe("validateFilterResult", () => {
+  function makeKept(overrides: Partial<FilterResultItem> = {}): FilterResultItem {
+    return {
+      title: "Event",
+      keepIds: ["1"],
+      mergedIds: [],
+      topic: "T",
+      relevance: "R",
+      confidence: "high",
+      reason: "R",
+      needsContext: false,
+      ...overrides,
+    };
+  }
+
+  it("passes for valid filter result", () => {
+    const result = validateFilterResult({ kept: [makeKept()], excluded: [] }, 5);
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects invalid candidate ID (out of range)", () => {
+    const result = validateFilterResult({ kept: [makeKept({ keepIds: ["99"] })], excluded: [] }, 5);
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]!.code).toBe("FILTER_INVALID_CANDIDATE_ID");
+  });
+
+  it("rejects kept and excluded overlap", () => {
+    const result = validateFilterResult(
+      { kept: [makeKept({ keepIds: ["2"] })], excluded: [{ id: "2", reason: "low" }] },
+      5,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]!.code).toBe("FILTER_KEPT_EXCLUDED_OVERLAP");
+  });
+
+  it("rejects same candidate assigned to multiple kept events", () => {
+    const kept = [
+      makeKept({ title: "A", keepIds: ["1", "2"] }),
+      makeKept({ title: "B", keepIds: ["2", "3"] }),
+    ];
+    const result = validateFilterResult({ kept, excluded: [] }, 5);
+    expect(result.ok).toBe(false);
+    expect(result.errors[0]!.code).toBe("FILTER_DUPLICATE_CANDIDATE_ASSIGNMENT");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildKeptCandidateUrlSet — narrowed whitelist
+// ---------------------------------------------------------------------------
+
+describe("buildKeptCandidateUrlSet", () => {
+  function mkKept(overrides: Partial<FilterResultItem> = {}): FilterResultItem {
+    return {
+      title: "Event",
+      keepIds: ["1"],
+      mergedIds: [],
+      topic: "T",
+      relevance: "R",
+      confidence: "high",
+      reason: "R",
+      needsContext: false,
+      ...overrides,
+    };
+  }
+
+  it("only includes URLs from kept candidates", () => {
+    const candidates: MergedCandidate[] = [
+      { ...makeCandidate({ id: "a", sourceUrl: "https://kept.com/1" }), additionalSources: [] },
+      { ...makeCandidate({ id: "b", sourceUrl: "https://excluded.com/2" }), additionalSources: [] },
+      { ...makeCandidate({ id: "c", sourceUrl: "https://kept.com/3" }), additionalSources: [] },
+    ];
+    const filterResult: FilterResult = {
+      kept: [mkKept({ keepIds: ["1"], mergedIds: ["3"] })],
+      excluded: [{ id: "2", reason: "low" }],
+    };
+    const urls = buildKeptCandidateUrlSet(candidates, filterResult);
+    expect(urls.has("https://kept.com/1")).toBe(true);
+    expect(urls.has("https://kept.com/3")).toBe(true);
+    expect(urls.has("https://excluded.com/2")).toBe(false);
+  });
+
+  it("includes additionalSources of kept candidates", () => {
+    const candidates: MergedCandidate[] = [
+      {
+        ...makeCandidate({ id: "a", sourceUrl: "https://primary.com/1" }),
+        additionalSources: ["https://extra.com/1"],
+      },
+    ];
+    const filterResult: FilterResult = {
+      kept: [mkKept({ keepIds: ["1"] })],
+      excluded: [],
+    };
+    const urls = buildKeptCandidateUrlSet(candidates, filterResult);
+    expect(urls.has("https://primary.com/1")).toBe(true);
+    expect(urls.has("https://extra.com/1")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateReport — candidate URL uniqueness
+// ---------------------------------------------------------------------------
+
+describe("validateReport — candidate URL uniqueness", () => {
+  it("rejects candidate URL consumed by multiple events", () => {
+    const sharedUrl = "https://example.com/shared";
+    const json: PersonalReportJson = {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "ok", "claude-code": "ok" },
+      events: [
+        {
+          id: "evt-1",
+          title: "Event A",
+          topic: "T",
+          eventTime: "2026-07-27T08:00:00Z",
+          updateKind: "new",
+          status: "已确认",
+          quick: { what: "w", why: "y", impact: "i", action: "a" },
+          full: { background: "b", evidence: "e", analysis: "a", impact: "i", action: "a" },
+          candidateIds: [sharedUrl],
+          sources: [{ name: "S", url: sharedUrl }],
+        },
+        {
+          id: "evt-2",
+          title: "Event B",
+          topic: "T",
+          eventTime: "2026-07-27T09:00:00Z",
+          updateKind: "new",
+          status: "已确认",
+          quick: { what: "w", why: "y", impact: "i", action: "a" },
+          full: { background: "b", evidence: "e", analysis: "a", impact: "i", action: "a" },
+          candidateIds: [sharedUrl],
+          sources: [{ name: "S", url: sharedUrl }],
+        },
+      ],
+      fiveMinuteBrief: { topicGroups: [{ name: "T", eventIds: ["evt-1"] }] },
+      fullReport: { topicGroups: [{ name: "T", eventIds: ["evt-1", "evt-2"] }] },
+    };
+    const urls = new Set([sharedUrl]);
+    const result = validateReport(json, DEFAULT_CONFIG, urls);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.message.includes("multiple events"))).toBe(true);
+  });
+
+  it("rejects candidateId not in kept whitelist", () => {
+    const json: PersonalReportJson = {
+      generatedAt: "2026-07-27T08:00:00Z",
+      coverageFrom: "2026-07-23T08:00:00Z",
+      coverageTo: "2026-07-27T08:00:00Z",
+      toolStatus: { codex: "ok", "claude-code": "ok" },
+      events: [
+        {
+          id: "evt-1",
+          title: "Event",
+          topic: "T",
+          eventTime: "2026-07-27T08:00:00Z",
+          updateKind: "new",
+          status: "已确认",
+          quick: { what: "w", why: "y", impact: "i", action: "a" },
+          full: { background: "b", evidence: "e", analysis: "a", impact: "i", action: "a" },
+          candidateIds: ["https://excluded-candidate.com/1"],
+          sources: [{ name: "S", url: "https://kept.com/1" }],
+        },
+      ],
+      fiveMinuteBrief: { topicGroups: [{ name: "T", eventIds: ["evt-1"] }] },
+      fullReport: { topicGroups: [{ name: "T", eventIds: ["evt-1"] }] },
+    };
+    const urls = new Set(["https://kept.com/1"]);
+    const result = validateReport(json, DEFAULT_CONFIG, urls);
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.message.includes("kept whitelist"))).toBe(true);
   });
 });

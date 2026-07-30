@@ -421,9 +421,10 @@ export function buildFeishuMessage(
  * Verifies that the target date's ai-personal report is actually published
  * on the public Pages site before allowing Feishu notification.
  *
- * Checks:
+ * Checks (per retry):
  *  1. Remote manifest contains the target date with ai-personal
  *  2. The ai-personal.md file returns HTTP 200
+ *  3. The personal-digest.json returns 200 and its generatedAt matches expectedGeneratedAt
  *
  * Uses cache-busting query params and bounded retry to handle Pages deploy delay.
  * Returns null on success, or an error message on final failure.
@@ -431,6 +432,7 @@ export function buildFeishuMessage(
 export async function checkReportPublished(
   pagesUrl: string,
   date: string,
+  expectedGeneratedAt?: string,
   maxRetries = 6,
   intervalMs = 10_000,
 ): Promise<string | null> {
@@ -489,6 +491,41 @@ export async function checkReportPublished(
         continue;
       }
       return `ai-personal.md 请求异常: ${e instanceof Error ? e.message : String(e)}`;
+    }
+
+    // 3. Check personal-digest.json generatedAt matches
+    if (expectedGeneratedAt) {
+      try {
+        const res = await fetch(`${base}/digests/${date}/personal-digest.json?_=${bust}`);
+        if (!res.ok) {
+          if (attempt < maxRetries) {
+            await delay(intervalMs);
+            continue;
+          }
+          return `personal-digest.json 请求失败 (${res.status})（重试 ${maxRetries} 次后）`;
+        }
+        const remoteJson = (await res.json()) as { generatedAt?: string };
+        if (!remoteJson.generatedAt) {
+          if (attempt < maxRetries) {
+            await delay(intervalMs);
+            continue;
+          }
+          return `远端 personal-digest.json 缺少 generatedAt（重试 ${maxRetries} 次后）`;
+        }
+        if (remoteJson.generatedAt !== expectedGeneratedAt) {
+          if (attempt < maxRetries) {
+            await delay(intervalMs);
+            continue;
+          }
+          return `远端 generatedAt 不一致：期望 ${expectedGeneratedAt}，实际 ${remoteJson.generatedAt}（重试 ${maxRetries} 次后）`;
+        }
+      } catch (e) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `personal-digest.json 请求异常: ${e instanceof Error ? e.message : String(e)}`;
+      }
     }
 
     return null; // success
@@ -615,7 +652,7 @@ async function main(): Promise<void> {
   }
 
   // Pre-send publication check with retry
-  const publishCheck = await checkReportPublished(PAGES_URL, date);
+  const publishCheck = await checkReportPublished(PAGES_URL, date, personalDigest.generatedAt);
   if (publishCheck) {
     console.error(`[feishu] 发送前检查失败: ${publishCheck} — 拒绝发送。`);
     process.exit(1);

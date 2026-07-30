@@ -1179,7 +1179,11 @@
             if (focusTitle) focusTitle.textContent = "📋 AI 前沿个人简报（本地预览）";
             var basePath = "./digests/preview-" + previewDate;
             enterFocusMode(previewDate, "ai-personal", "本地预览");
-            await loadReport(previewDate, "ai-personal", { push: false, basePath: basePath });
+            await loadReport(previewDate, "ai-personal", {
+              push: false,
+              basePath: basePath,
+              forceFocus: true,
+            });
             return;
           }
 

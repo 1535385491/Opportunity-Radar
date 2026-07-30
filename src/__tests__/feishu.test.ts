@@ -220,7 +220,7 @@ describe("checkReportPublished", () => {
       return Promise.resolve({ ok: false, status: 404 });
     });
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 1, 0);
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 1, 0);
     expect(result).toBeNull();
   });
 
@@ -235,7 +235,7 @@ describe("checkReportPublished", () => {
       return Promise.resolve({ ok: false, status: 404 });
     });
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 1, 0);
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 1, 0);
     expect(result).toContain("不包含 2026-07-27");
   });
 
@@ -250,7 +250,7 @@ describe("checkReportPublished", () => {
       return Promise.resolve({ ok: false, status: 404 });
     });
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 1, 0);
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 1, 0);
     expect(result).toContain("不包含 ai-personal");
   });
 
@@ -268,7 +268,7 @@ describe("checkReportPublished", () => {
       return Promise.resolve({ ok: false, status: 404 });
     });
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 1, 0);
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 1, 0);
     expect(result).toContain("ai-personal.md");
     expect(result).toContain("404");
   });
@@ -276,7 +276,7 @@ describe("checkReportPublished", () => {
   it("returns error when manifest fetch fails", async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error("network error"));
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 1, 0);
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 1, 0);
     expect(result).toContain("异常");
   });
 
@@ -297,8 +297,130 @@ describe("checkReportPublished", () => {
       return Promise.resolve({ ok: false, status: 404 });
     });
 
-    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", 3, 0);
+    const result = await checkReportPublished("https://example.com/pages", "2026-07-27", undefined, 3, 0);
     expect(result).toBeNull();
+  });
+
+  it("fails when remote generatedAt does not match expected", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("manifest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ dates: [{ date: "2026-07-27", reports: ["ai-personal"] }] }),
+        });
+      }
+      if (url.includes("ai-personal.md")) return Promise.resolve({ ok: true });
+      if (url.includes("personal-digest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ generatedAt: "2026-07-27T00:00:00Z" }),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
+
+    const result = await checkReportPublished(
+      "https://example.com/pages",
+      "2026-07-27",
+      "2026-07-27T12:00:00Z",
+      1,
+      0,
+    );
+    expect(result).toContain("generatedAt");
+    expect(result).toContain("不一致");
+  });
+
+  it("succeeds when remote generatedAt matches expected", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("manifest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ dates: [{ date: "2026-07-27", reports: ["ai-personal"] }] }),
+        });
+      }
+      if (url.includes("ai-personal.md")) return Promise.resolve({ ok: true });
+      if (url.includes("personal-digest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ generatedAt: "2026-07-27T12:00:00Z" }),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
+
+    const result = await checkReportPublished(
+      "https://example.com/pages",
+      "2026-07-27",
+      "2026-07-27T12:00:00Z",
+      1,
+      0,
+    );
+    expect(result).toBeNull();
+  });
+
+  it("fails when remote personal-digest.json has no generatedAt", async () => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("manifest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ dates: [{ date: "2026-07-27", reports: ["ai-personal"] }] }),
+        });
+      }
+      if (url.includes("ai-personal.md")) return Promise.resolve({ ok: true });
+      if (url.includes("personal-digest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ toolStatus: {} }),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
+
+    const result = await checkReportPublished(
+      "https://example.com/pages",
+      "2026-07-27",
+      "2026-07-27T12:00:00Z",
+      1,
+      0,
+    );
+    expect(result).toContain("缺少 generatedAt");
+  });
+
+  it("retries and succeeds when generatedAt becomes correct", async () => {
+    let callCount = 0;
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("manifest.json")) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ dates: [{ date: "2026-07-27", reports: ["ai-personal"] }] }),
+        });
+      }
+      if (url.includes("ai-personal.md")) return Promise.resolve({ ok: true });
+      if (url.includes("personal-digest.json")) {
+        callCount++;
+        if (callCount <= 1) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ generatedAt: "2026-07-27T00:00:00Z" }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ generatedAt: "2026-07-27T12:00:00Z" }),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
+
+    const result = await checkReportPublished(
+      "https://example.com/pages",
+      "2026-07-27",
+      "2026-07-27T12:00:00Z",
+      3,
+      0,
+    );
+    expect(result).toBeNull();
+    expect(callCount).toBe(2);
   });
 });
 
