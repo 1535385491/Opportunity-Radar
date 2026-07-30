@@ -615,6 +615,69 @@ describe("executeFeishuSend", () => {
       store.isAlreadySent(makeNotificationKey("feishu-webhook", "daily", "2026-07-27", "https://b.com/2")),
     ).toBe(false);
   });
+
+  it("webhook: both already sent → skipped, no checkPublished, no fetch", async () => {
+    const store = createMemoryStore({
+      [makeNotificationKey("feishu-webhook", "daily", "2026-07-27", "https://a.com/1")]: "t",
+      [makeNotificationKey("feishu-webhook", "daily", "2026-07-27", "https://b.com/2")]: "t",
+    });
+    const checkPublished = vi.fn();
+    const fetchFn = vi.fn();
+    const r = await executeFeishuSend({
+      env: { FEISHU_WEBHOOK_URLS: "https://a.com/1,https://b.com/2", REPORT_DATE: "2026-07-27" },
+      fetchManifest: async () => makeManifest("2026-07-27"),
+      readPersonalDigest: () => makeDigest(),
+      fetchFn,
+      stateStore: store,
+      checkPublished,
+    });
+    expect(r.success).toBe(true);
+    expect(r.skipped).toBe(true);
+    expect(checkPublished).not.toHaveBeenCalled();
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("webhook: one sent one pending → checkPublished once, only send pending", async () => {
+    const store = createMemoryStore({
+      [makeNotificationKey("feishu-webhook", "daily", "2026-07-27", "https://a.com/1")]: "t",
+    });
+    const checkPublished = vi.fn().mockResolvedValue(null);
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true });
+    const r = await executeFeishuSend({
+      env: { FEISHU_WEBHOOK_URLS: "https://a.com/1,https://b.com/2", REPORT_DATE: "2026-07-27" },
+      fetchManifest: async () => makeManifest("2026-07-27"),
+      readPersonalDigest: () => makeDigest(),
+      fetchFn,
+      stateStore: store,
+      checkPublished,
+    });
+    expect(r.success).toBe(true);
+    expect(checkPublished).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledTimes(1); // only the pending one
+    expect(
+      store.isAlreadySent(makeNotificationKey("feishu-webhook", "daily", "2026-07-27", "https://b.com/2")),
+    ).toBe(true);
+  });
+
+  it("webhook: FORCE_SEND + Pages fail → nothing sent, no state", async () => {
+    const store = createMemoryStore();
+    const fetchFn = vi.fn();
+    const r = await executeFeishuSend({
+      env: { FEISHU_WEBHOOK_URLS: "https://a.com/1", REPORT_DATE: "2026-07-27", FORCE_SEND: "true" },
+      fetchManifest: async () => makeManifest("2026-07-27"),
+      readPersonalDigest: () => makeDigest(),
+      fetchFn,
+      stateStore: store,
+      checkPublished: async () => "Pages not ready",
+      forceSend: true,
+    });
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("Pages");
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(
+      store.isAlreadySent(makeNotificationKey("feishu-webhook", "daily", "2026-07-27", "https://a.com/1")),
+    ).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

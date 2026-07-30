@@ -61,7 +61,7 @@ describe("executeTelegramSend", () => {
     return {
       env: { TELEGRAM_BOT_TOKEN: "token", TELEGRAM_CHAT_ID: "chat-123", REPORT_DATE: "2026-07-27" },
       fetchManifest: async () => ({ dates: [{ date: "2026-07-27", reports: ["ai-personal"] }] }),
-      fetchFn: vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("") }),
+      fetchFn: vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) }),
       stateStore: createMemoryStore(),
       ...overrides,
     };
@@ -101,7 +101,7 @@ describe("executeTelegramSend", () => {
   });
 
   it("sends when latest date matches REPORT_DATE", async () => {
-    const fetchFn = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("") });
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
     const store = createMemoryStore();
     const r = await executeTelegramSend(makeDeps({ fetchFn, stateStore: store }));
     expect(r.success).toBe(true);
@@ -124,7 +124,7 @@ describe("executeTelegramSend", () => {
   it("FORCE_SEND resends", async () => {
     const store = createMemoryStore();
     await executeTelegramSend(makeDeps({ stateStore: store }));
-    const fetchFn = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("") });
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }) });
     const r = await executeTelegramSend(
       makeDeps({
         fetchFn,
@@ -150,6 +150,66 @@ describe("executeTelegramSend", () => {
     expect(store.isAlreadySent(makeNotificationKey("telegram", "daily", "2026-07-27", "chat-123"))).toBe(
       false,
     );
+  });
+
+  it("HTTP 200 + { ok: true } succeeds and records", async () => {
+    const store = createMemoryStore();
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: true }),
+    });
+    const r = await executeTelegramSend(makeDeps({ fetchFn, stateStore: store }));
+    expect(r.success).toBe(true);
+    expect(store.isAlreadySent(makeNotificationKey("telegram", "daily", "2026-07-27", "chat-123"))).toBe(
+      true,
+    );
+  });
+
+  it("HTTP 200 + { ok: false } fails and does not record", async () => {
+    const store = createMemoryStore();
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: false, description: "Bad request" }),
+    });
+    const r = await executeTelegramSend(makeDeps({ fetchFn, stateStore: store }));
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("Bad request");
+    expect(store.isAlreadySent(makeNotificationKey("telegram", "daily", "2026-07-27", "chat-123"))).toBe(
+      false,
+    );
+  });
+
+  it("HTTP 200 + invalid JSON fails and does not record", async () => {
+    const store = createMemoryStore();
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.reject(new Error("invalid json")),
+    });
+    const r = await executeTelegramSend(makeDeps({ fetchFn, stateStore: store }));
+    expect(r.success).toBe(false);
+    expect(r.error).toContain("invalid JSON");
+    expect(store.isAlreadySent(makeNotificationKey("telegram", "daily", "2026-07-27", "chat-123"))).toBe(
+      false,
+    );
+  });
+
+  it("error message does not leak bot token", async () => {
+    const fetchFn = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ ok: false, description: "Unauthorized" }),
+    });
+    const r = await executeTelegramSend(
+      makeDeps({
+        fetchFn,
+        env: {
+          TELEGRAM_BOT_TOKEN: "super-secret-token-123",
+          TELEGRAM_CHAT_ID: "chat",
+          REPORT_DATE: "2026-07-27",
+        },
+      }),
+    );
+    expect(r.success).toBe(false);
+    expect(r.error).not.toContain("super-secret-token-123");
   });
 
   it("does not log bot token", async () => {

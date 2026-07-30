@@ -476,34 +476,31 @@ export async function executeFeishuSend(deps: FeishuSendDeps): Promise<FeishuSen
   const isWeekly = baseReports.includes("ai-weekly");
   const type = isMonthly ? "monthly" : isWeekly ? "weekly" : "daily";
 
-  // Dedup check (before expensive Pages verification)
-  const destination = hasApp ? (env["FEISHU_CHAT_ID"] ?? "") : webhookUrls.join(",");
-  const channel = hasApp ? "feishu-openapi" : "feishu-webhook";
-  const notifKey = makeNotificationKey(channel, type, date, destination);
-
-  if (stateStore.isAlreadySent(notifKey) && !forceSend) {
-    return { success: true, skipped: true };
-  }
-
-  // Pages publication gate — must pass before contacting Feishu
+  // Dedup check — per-destination keys
   const PAGES_URL = (env["PAGES_URL"] ?? SITE_PAGES_URL).replace(/\/$/, "");
-  const publishError = await checkPublished(PAGES_URL, date, personalDigest.generatedAt);
-  if (publishError) {
-    return { success: false, skipped: false, error: `Pages 发布检查失败: ${publishError}` };
-  }
-
-  const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
 
   if (hasApp) {
-    // Open API path
-    const chatId = env["FEISHU_CHAT_ID"] ?? "";
-    if (!chatId) {
-      return { success: false, skipped: false, error: "FEISHU_CHAT_ID is required" };
+    // Open API: single destination
+    const destination = env["FEISHU_CHAT_ID"] ?? "";
+    const notifKey = makeNotificationKey("feishu-openapi", type, date, destination);
+
+    if (stateStore.isAlreadySent(notifKey) && !forceSend) {
+      return { success: true, skipped: true };
     }
 
+    // Pages publication gate
+    const publishError = await checkPublished(PAGES_URL, date, personalDigest.generatedAt);
+    if (publishError) {
+      return { success: false, skipped: false, error: `Pages 发布检查失败: ${publishError}` };
+    }
+
+    const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
     const uuid = makeFeishuUuid(type, date, destination, forceSend);
 
     try {
+      const chatId = env["FEISHU_CHAT_ID"] ?? "";
+      if (!chatId) return { success: false, skipped: false, error: "FEISHU_CHAT_ID is required" };
+
       const tokenResp = await fetchFn(
         "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
         {
@@ -536,15 +533,10 @@ export async function executeFeishuSend(deps: FeishuSendDeps): Promise<FeishuSen
           }),
         },
       );
-
-      if (!sendResp.ok) {
-        return { success: false, skipped: false, error: `Send API ${sendResp.status}` };
-      }
-
+      if (!sendResp.ok) return { success: false, skipped: false, error: `Send API ${sendResp.status}` };
       const sendData = (await sendResp.json()) as { code: number; msg: string };
-      if (sendData.code !== 0) {
+      if (sendData.code !== 0)
         return { success: false, skipped: false, error: `Send error ${sendData.code}: ${sendData.msg}` };
-      }
 
       stateStore.recordSend(notifKey);
       return { success: true, skipped: false };
@@ -554,15 +546,28 @@ export async function executeFeishuSend(deps: FeishuSendDeps): Promise<FeishuSen
   }
 
   // Webhook path — per-webhook dedup
-  const failedUrls: string[] = [];
-
+  const pendingUrls: string[] = [];
   for (const url of webhookUrls) {
     const whKey = makeNotificationKey("feishu-webhook", type, date, url);
+    if (stateStore.isAlreadySent(whKey) && !forceSend) continue;
+    pendingUrls.push(url);
+  }
 
-    if (stateStore.isAlreadySent(whKey) && !forceSend) {
-      continue; // already sent
-    }
+  if (pendingUrls.length === 0) {
+    return { success: true, skipped: true };
+  }
 
+  // Pages publication gate (once, only if there are pending webhooks)
+  const publishError = await checkPublished(PAGES_URL, date, personalDigest.generatedAt);
+  if (publishError) {
+    return { success: false, skipped: false, error: `Pages 发布检查失败: ${publishError}` };
+  }
+
+  const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
+  const failedUrls: string[] = [];
+
+  for (const url of pendingUrls) {
+    const whKey = makeNotificationKey("feishu-webhook", type, date, url);
     try {
       const res = await fetchFn(url, {
         method: "POST",
@@ -583,7 +588,7 @@ export async function executeFeishuSend(deps: FeishuSendDeps): Promise<FeishuSen
     return {
       success: false,
       skipped: false,
-      error: `${failedUrls.length}/${webhookUrls.length} webhook(s) failed`,
+      error: `${failedUrls.length}/${pendingUrls.length} webhook(s) failed`,
     };
   }
 

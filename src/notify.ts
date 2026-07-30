@@ -165,6 +165,19 @@ export async function executeTelegramSend(deps: TelegramSendDeps): Promise<Teleg
       const body = await res.text();
       return { success: false, skipped: false, error: `Telegram API ${res.status}: ${body}` };
     }
+    // Validate JSON response: Telegram returns { ok: true } on success
+    try {
+      const json = (await res.json()) as { ok?: boolean; description?: string };
+      if (json.ok !== true) {
+        return {
+          success: false,
+          skipped: false,
+          error: `Telegram API error: ${json.description ?? "ok !== true"}`,
+        };
+      }
+    } catch {
+      return { success: false, skipped: false, error: "Telegram API: invalid JSON response" };
+    }
   } catch (e) {
     return { success: false, skipped: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -186,6 +199,7 @@ async function main(): Promise<void> {
     },
     fetchFn: globalThis.fetch as (url: string, init?: RequestInit) => Promise<Response>,
     stateStore: createProductionStore(),
+    forceSend: process.env["FORCE_SEND"] === "true",
     loadHighlights: (date: string) => {
       const highlightsPath = path.join("digests", date, "highlights.json");
       if (!fs.existsSync(highlightsPath)) return null;
