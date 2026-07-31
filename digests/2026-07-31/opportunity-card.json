@@ -1,0 +1,28 @@
+{
+  "zh": {
+    "summary": "ECC项目GitHub日增804 stars，优化AI编程CLI性能，引爆开发者工具市场。",
+    "signals": [
+      {
+        "title": "AI编程CLI性能优化工具",
+        "description": "ECC项目专为Claude Code、Codex等编程CLI设计性能优化系统，今日爆发增长。能赚钱吗？能，直接降低AI工具使用成本，适合开发SaaS或集成服务。下一步：开发付费优化服务或企业解决方案。",
+        "report": "ai-trending"
+      },
+      {
+        "title": "Token压缩节省AI成本",
+        "description": "headroom项目压缩工具输出和日志以节省token，直击AI应用成本痛点。能赚钱吗？能，API调用费用是主要开支，可提供云服务或商业化开源工具。下一步：推出订阅制压缩服务。",
+        "report": "ai-trending"
+      },
+      {
+        "title": "多AI代理管理工具",
+        "description": "Agent-Manager TUI工具管理Claude Code、Codex等多个AI代理，解决开发者同时使用多工具的需求。能赚钱吗？能，提升开发效率，可扩展功能或与IDE集成。下一步：开发专业版或企业定制。",
+        "report": "ai-hn"
+      },
+      {
+        "title": "高下载量OCR模型",
+        "description": "百度Unlimited-OCR模型下载量超250万，实现无限文档OCR识别。能赚钱吗？能，在文档处理、自动化领域有广泛应用，可提供API服务。下一步：针对垂直行业开发定制OCR解决方案。",
+        "report": "ai-hf"
+      }
+    ]
+  },
+  "en": {}
+}

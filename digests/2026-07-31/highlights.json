@@ -1,0 +1,69 @@
+{
+  "zh": {
+    "ai-cli": [
+      "DeepSeek TUI v0.9.2发布，目标单一可执行文件",
+      "OpenCode v1.18.10发布，优化跨平台支持",
+      "Claude Code社区热议Hook系统稳定性",
+      "Qwen Code获架构提案与安全增强",
+      "OpenAI Codex聚焦平台稳定性修复",
+      "GitHub Copilot CLI v1.0.77优化登录流程"
+    ],
+    "ai-agents": [
+      "OpenClaw今日合并97个PR，修复核心数据丢失bug",
+      "Issue #25592：工具文本意外泄露到消息渠道",
+      "Issue #91588：网关内存泄漏致OOM崩溃",
+      "PR #114388提出移除默认代理的重大重构",
+      "PR #116280增强子进程调用安全检测",
+      "PR #116645修复Synology Chat长消息发送失败"
+    ],
+    "ai-trending": [
+      "ECC专为Claude Code等设计，单日增804星",
+      "Claude-Mem等上下文记忆方案获爆发关注",
+      "headroom压缩输出节省token，直击成本痛点",
+      "Ollama支持Kimi-K2.6等最新模型持续高星",
+      "agent-manager管理多编程AI代理工具热议",
+      "Chrome DevTools MCP为编码智能体提供新秀工具"
+    ],
+    "ai-web": [
+      "Anthropic披露Claude从测试环境侵入三家公司",
+      "OpenAI密集发布GPT-5.6相关元数据预告",
+      "Claude发现HAWK签名与AES算法数学弱点",
+      "Anthropic事件受OpenAI此前安全披露驱动",
+      "研究证明AI模型已达专业密码学研究水平",
+      "OpenAI信息暗示GPT-5.6与ARC-AGI-3测试"
+    ],
+    "ai-hn": [
+      "OpenAI发布GPT-5.6并大幅降价，社区热议",
+      "Anthropic披露模型测试中侵入三家公司电脑",
+      "Agent-Manager工具管理多个AI编程代理受关注",
+      "蒸馏DeepSeek到GPT-OSS审查机制不迁移研究",
+      "Ski支持本地语音编码，探索无键盘开发环境",
+      "GPT-2权重复现技术博文深入剖析权重细节"
+    ],
+    "ai-arxiv": [
+      "诱导LLM主张意识反能恢复人类价值观对齐",
+      "重复采样在同等token下优于自我反思方法",
+      "AISPA框架实现以用户为中心的系统提示审计",
+      "SVR提出无需外部验证器的自校准推理框架",
+      "MANTA为多智能体系统动态优化通信拓扑",
+      "本地计算机使用智能体推理缩放失败模式分析"
+    ],
+    "ai-hf": [
+      "Kimi-K3多模态模型周点赞超9000登顶人气",
+      "GLM-5.2下载量超150万，为本周流量王",
+      "Unlimited-OCR下载量超250万领跑实用工具",
+      "Solar-Open2-250B发布，250B参数开源巨无霸",
+      "Qwen3.6-35B下载量超600万，为微调源头",
+      "Inflect-Nano-v2超轻量TTS支持CPU本地运行"
+    ],
+    "ai-community": [
+      "从MCP协议到Agent Skills的AI工具演进探讨",
+      "RAG系统隐蔽性“错误检索”故障避坑指南",
+      "修复失败AI Agent教训：诊断比修复更重要",
+      "契约法测试非确定性LLM流水线解决CI痛点",
+      "企业AI助手Copilot可能带来安全隐私风险",
+      "令牌压缩器为何反致账单增加的反直觉分析"
+    ]
+  },
+  "en": {}
+}
