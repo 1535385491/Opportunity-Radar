@@ -447,10 +447,14 @@ export async function executeFeishuSend(deps: FeishuSendDeps): Promise<FeishuSen
   } = deps;
 
   const hasApp = !!env["FEISHU_APP_ID"];
-  const webhookUrls = (env["FEISHU_WEBHOOK_URLS"] ?? env["FEISHU_WEBHOOK_URL"] ?? "")
-    .split(",")
-    .map((u: string) => u.trim())
-    .filter(Boolean);
+  const webhookUrls = [
+    ...new Set(
+      (env["FEISHU_WEBHOOK_URLS"] ?? env["FEISHU_WEBHOOK_URL"] ?? "")
+        .split(",")
+        .map((u: string) => u.trim())
+        .filter(Boolean),
+    ),
+  ];
 
   if (!hasApp && !webhookUrls.length) {
     return { success: true, skipped: true };

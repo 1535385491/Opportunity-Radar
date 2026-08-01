@@ -24,6 +24,11 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function redactSecret(text: string, secret: string): string {
+  if (!secret) return text;
+  return text.split(secret).join("[REDACTED]");
+}
+
 export function buildMessage(
   date: string,
   reports: string[],
@@ -92,7 +97,8 @@ export interface TelegramSendDeps {
 }
 
 export async function executeTelegramSend(deps: TelegramSendDeps): Promise<TelegramSendResult> {
-  const { env, fetchManifest, fetchFn, stateStore, forceSend = false, loadHighlights } = deps;
+  const { env, fetchManifest, fetchFn, stateStore, loadHighlights } = deps;
+  const forceSend = deps.forceSend ?? env["FORCE_SEND"] === "true";
 
   const botToken = env["TELEGRAM_BOT_TOKEN"] ?? "";
   if (!botToken) {
@@ -163,7 +169,11 @@ export async function executeTelegramSend(deps: TelegramSendDeps): Promise<Teleg
     });
     if (!res.ok) {
       const body = await res.text();
-      return { success: false, skipped: false, error: `Telegram API ${res.status}: ${body}` };
+      return {
+        success: false,
+        skipped: false,
+        error: redactSecret(`Telegram API ${res.status}: ${body}`, botToken),
+      };
     }
     // Validate JSON response: Telegram returns { ok: true } on success
     try {
@@ -172,14 +182,18 @@ export async function executeTelegramSend(deps: TelegramSendDeps): Promise<Teleg
         return {
           success: false,
           skipped: false,
-          error: `Telegram API error: ${json.description ?? "ok !== true"}`,
+          error: redactSecret(`Telegram API error: ${json.description ?? "ok !== true"}`, botToken),
         };
       }
     } catch {
       return { success: false, skipped: false, error: "Telegram API: invalid JSON response" };
     }
   } catch (e) {
-    return { success: false, skipped: false, error: e instanceof Error ? e.message : String(e) };
+    return {
+      success: false,
+      skipped: false,
+      error: redactSecret(e instanceof Error ? e.message : String(e), botToken),
+    };
   }
 
   stateStore.recordSend(notifKey);

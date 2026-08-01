@@ -733,6 +733,72 @@ describe("workflow checks", () => {
     expect(wf.split("Persist notification state")[1] ?? "").toContain("always()");
   });
   it("persist checks file existence", () => {
-    expect(wf.split("Persist notification state")[1] ?? "").toContain("notification-state.json");
+    const section = wf.split("Persist notification state")[1] ?? "";
+    expect(section).toContain("notification-state.json");
+    // File check must come before git add
+    const fileCheckPos = section.indexOf("! -f digests/notification-state.json");
+    const gitAddPos = section.indexOf("git add digests/notification-state.json");
+    expect(fileCheckPos).toBeGreaterThan(-1);
+    expect(gitAddPos).toBeGreaterThan(-1);
+    expect(fileCheckPos).toBeLessThan(gitAddPos);
+    // exit 0 must be after file check
+    expect(section.indexOf("exit 0")).toBeGreaterThan(-1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Webhook URL dedup
+// ---------------------------------------------------------------------------
+
+describe("executeFeishuSend — webhook URL dedup", () => {
+  it("duplicate URLs only send once", async () => {
+    const store = createMemoryStore();
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true });
+    const checkPublished = vi.fn().mockResolvedValue(null);
+    await executeFeishuSend({
+      env: { FEISHU_WEBHOOK_URLS: "https://a.com/hook,https://a.com/hook", REPORT_DATE: "2026-07-27" },
+      fetchManifest: async () => makeManifest("2026-07-27"),
+      readPersonalDigest: () => makeDigest(),
+      fetchFn,
+      stateStore: store,
+      checkPublished,
+    });
+    expect(checkPublished).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("duplicate URLs with spaces still send once", async () => {
+    const store = createMemoryStore();
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true });
+    await executeFeishuSend({
+      env: { FEISHU_WEBHOOK_URLS: "https://a.com/hook , https://a.com/hook", REPORT_DATE: "2026-07-27" },
+      fetchManifest: async () => makeManifest("2026-07-27"),
+      readPersonalDigest: () => makeDigest(),
+      fetchFn,
+      stateStore: store,
+      checkPublished: async () => null,
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("FORCE_SEND + duplicate URL → Pages check once, send once", async () => {
+    const store = createMemoryStore();
+    const fetchFn = vi.fn().mockResolvedValue({ ok: true });
+    const checkPublished = vi.fn().mockResolvedValue(null);
+    await executeFeishuSend({
+      env: {
+        FEISHU_WEBHOOK_URLS: "https://a.com/hook,https://a.com/hook",
+        REPORT_DATE: "2026-07-27",
+        FORCE_SEND: "true",
+      },
+      fetchManifest: async () => makeManifest("2026-07-27"),
+      readPersonalDigest: () => makeDigest(),
+      fetchFn,
+      stateStore: store,
+      checkPublished,
+      forceSend: true,
+    });
+    expect(checkPublished).toHaveBeenCalledTimes(1);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 });
