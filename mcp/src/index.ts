@@ -11,7 +11,7 @@
  *   search        — keyword search across recent reports
  */
 
-const PAGES_URL = "https://duanyytop.github.io/agents-radar";
+const PAGES_URL = "https://1535385491.github.io/Opportunity-Radar";
 
 const REPORT_LABELS: Record<string, string> = {
   "ai-cli": "AI CLI Tools Digest (ZH)",
@@ -97,7 +97,9 @@ async function toolGetLatest(args: Record<string, unknown>): Promise<string> {
 }
 
 async function toolSearch(args: Record<string, unknown>): Promise<string> {
-  const query = String(args["query"] ?? "").trim().toLowerCase();
+  const query = String(args["query"] ?? "")
+    .trim()
+    .toLowerCase();
   if (!query) throw new Error("'query' is required");
   const days = Math.min(Number(args["days"] ?? 7), 14);
 

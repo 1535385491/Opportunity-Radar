@@ -15,96 +15,28 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { NOTIFY_LABELS } from "./i18n.ts";
-import type { Highlights } from "./notify.ts";
-import type { OpportunityCard } from "./prompts-data.ts";
-
-const PAGES_URL_DEFAULT = "https://duanyytop.github.io/agents-radar";
+import { PAGES_URL as SITE_PAGES_URL } from "./site.ts";
+import { guardReportSchema } from "./personal-report.ts";
+import type { PersonalReportJson } from "./personal-report.ts";
+import {
+  makeNotificationKey,
+  makeFeishuIdempotencyKey,
+  createProductionStore,
+  type NotificationStateStore,
+} from "./notification-state.ts";
 
 // ---------------------------------------------------------------------------
 // Feishu Open API — app-based authentication
 // ---------------------------------------------------------------------------
 
-interface TenantTokenCache {
-  token: string;
-  expiresAt: number;
-}
-
-let tokenCache: TenantTokenCache | null = null;
-
-async function getTenantToken(): Promise<string> {
-  const appId = process.env["FEISHU_APP_ID"] ?? "";
-  const appSecret = process.env["FEISHU_APP_SECRET"] ?? "";
-
-  if (!appId || !appSecret) throw new Error("FEISHU_APP_ID and FEISHU_APP_SECRET are required");
-
-  // Return cached token if still valid (with 5 min safety margin)
-  if (tokenCache && Date.now() < tokenCache.expiresAt - 300_000) {
-    return tokenCache.token;
-  }
-
-  const resp = await fetch("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
-  });
-
-  if (!resp.ok) throw new Error(`Feishu token API ${resp.status}: ${await resp.text()}`);
-
-  const data = (await resp.json()) as {
-    code: number;
-    msg: string;
-    tenant_access_token?: string;
-    expire?: number;
-  };
-  if (data.code !== 0 || !data.tenant_access_token) {
-    throw new Error(`Feishu token error ${data.code}: ${data.msg}`);
-  }
-
-  tokenCache = {
-    token: data.tenant_access_token,
-    expiresAt: Date.now() + (data.expire ?? 7200) * 1000,
-  };
-
-  return tokenCache.token;
-}
-
-async function sendViaOpenApi(card: unknown): Promise<void> {
-  const chatId = process.env["FEISHU_CHAT_ID"] ?? "";
-  if (!chatId) throw new Error("FEISHU_CHAT_ID is required");
-
-  const token = await getTenantToken();
-
-  const resp = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      receive_id: chatId,
-      msg_type: "interactive",
-      content: JSON.stringify(card),
-    }),
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`Feishu send API ${resp.status}: ${body}`);
-  }
-
-  const data = (await resp.json()) as { code: number; msg: string };
-  if (data.code !== 0) {
-    throw new Error(`Feishu send error ${data.code}: ${data.msg}`);
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Webhook mode (legacy)
+// Webhook mode (legacy) — per-webhook dedup
 // ---------------------------------------------------------------------------
 
-function getWebhookUrls(): string[] {
+export function getWebhookUrls(): string[] {
   const raw = process.env["FEISHU_WEBHOOK_URLS"] ?? process.env["FEISHU_WEBHOOK_URL"] ?? "";
   return raw
     .split(",")
@@ -112,53 +44,11 @@ function getWebhookUrls(): string[] {
     .filter(Boolean);
 }
 
-async function sendViaWebhook(webhookUrl: string, card: unknown): Promise<void> {
-  const res = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ msg_type: "interactive", card }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Feishu webhook ${res.status}: ${body}`);
-  }
-}
-
-async function sendViaWebhooks(card: unknown): Promise<void> {
-  const urls = getWebhookUrls();
-  if (!urls.length) throw new Error("No Feishu webhook URLs configured");
-  const results = await Promise.allSettled(urls.map((url) => sendViaWebhook(url, card)));
-  const failures = results.filter((r) => r.status === "rejected");
-  if (failures.length) {
-    const msgs = failures.map((r) => (r as PromiseRejectedResult).reason);
-    console.error(`[feishu] ${failures.length}/${urls.length} webhook(s) failed:`, msgs);
-    if (failures.length === urls.length) throw new Error("All Feishu webhooks failed");
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Unified send — prefers Open API, falls back to webhooks
-// ---------------------------------------------------------------------------
-
-async function sendCard(card: unknown): Promise<void> {
-  const hasApp = !!process.env["FEISHU_APP_ID"];
-  const hasWebhook = getWebhookUrls().length > 0;
-
-  if (hasApp) {
-    await sendViaOpenApi(card);
-  } else if (hasWebhook) {
-    await sendViaWebhooks(card);
-  } else {
-    console.log("[feishu] Neither FEISHU_APP_ID nor FEISHU_WEBHOOK_URLS set — skipping.");
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Card builder — narrative + opportunity signals, mobile-friendly
 // ---------------------------------------------------------------------------
 
 function escapeMarkdown(s: string): string {
-  // Feishu markdown: escape [ ] ( ) ` ~ only when they could break syntax
   return s.replace(/\[/g, "\\[").replace(/\]/g, "\\]");
 }
 
@@ -166,13 +56,12 @@ interface CardContext {
   date: string;
   reports: string[];
   pagesUrl: string;
-  highlights: Highlights | null;
-  opportunity: OpportunityCard | null;
+  personalDigest: PersonalReportJson | null;
   type: "daily" | "weekly" | "monthly";
 }
 
-function buildCard(ctx: CardContext): unknown {
-  const { date, reports, pagesUrl, highlights, opportunity, type } = ctx;
+export function buildCard(ctx: CardContext): unknown {
+  const { date, reports, pagesUrl, personalDigest, type } = ctx;
   const baseReports = reports.filter((r) => !r.endsWith("-en"));
 
   const icon = type === "monthly" ? "📆" : type === "weekly" ? "📅" : "📡";
@@ -181,76 +70,49 @@ function buildCard(ctx: CardContext): unknown {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const elements: any[] = [];
 
-  // --- Opportunity section (narrative style) ---
-  if (opportunity?.summary || opportunity?.signals?.length) {
-    if (opportunity.summary) {
-      elements.push({
-        tag: "markdown",
-        content: `**🔥 今日一句话**\n\n${escapeMarkdown(opportunity.summary)}`,
-      });
+  // --- Five-minute brief from personal-digest.json ---
+  if (personalDigest?.fiveMinuteBrief?.topicGroups?.length) {
+    const eventMap = new Map<string, { title: string; quick: { what: string; why: string } }>();
+    for (const evt of personalDigest.events ?? []) {
+      eventMap.set(evt.id, { title: evt.title, quick: evt.quick });
     }
-
-    if (opportunity.signals?.length) {
-      const signalLines = opportunity.signals.map((s, i) => {
-        const reportUrl = s.report ? `${pagesUrl}/#${date}/${s.report}` : "";
-        const link = reportUrl ? `  [→ 看报告](${reportUrl})` : "";
-        return `${i + 1}. **${escapeMarkdown(s.title)}**\n${escapeMarkdown(s.description)}${link}`;
-      });
-      elements.push({ tag: "hr" });
-      elements.push({
-        tag: "markdown",
-        content: "**⚡ 值得关注的机会**\n\n" + signalLines.join("\n\n"),
-      });
-    }
-  } else {
-    // Fallback: use highlights if opportunity card not available
-    const zhHighlights = highlights?.zh ?? {};
-    const highlightLines: string[] = [];
-    const priorityOrder = [
-      "ai-cli",
-      "ai-agents",
-      "ai-trending",
-      "ai-hn",
-      "ai-ph",
-      "ai-arxiv",
-      "ai-hf",
-      "ai-community",
-    ];
-    const ordered =
-      type === "weekly"
-        ? ["ai-weekly", ...priorityOrder]
-        : type === "monthly"
-          ? ["ai-monthly", ...priorityOrder]
-          : priorityOrder;
-
-    for (const reportId of ordered) {
-      if (!baseReports.includes(reportId)) continue;
-      const items = zhHighlights[reportId];
-      if (!items?.length) continue;
-      const label = NOTIFY_LABELS[reportId]?.zh ?? reportId;
-      highlightLines.push(`**${label}**`);
-      for (const h of items.slice(0, 2)) {
-        highlightLines.push(`• ${escapeMarkdown(h)}`);
+    const overviewLines: string[] = [];
+    let idx = 0;
+    for (const group of personalDigest.fiveMinuteBrief.topicGroups) {
+      for (const id of group.eventIds ?? []) {
+        const evt = eventMap.get(id);
+        if (!evt) continue;
+        idx++;
+        overviewLines.push(
+          `${idx}. **${escapeMarkdown(evt.title)}**\n   ${escapeMarkdown(evt.quick.what)} → ${escapeMarkdown(evt.quick.why)}`,
+        );
       }
-      highlightLines.push("");
     }
-
-    if (highlightLines.length > 0) {
+    if (overviewLines.length) {
       elements.push({
         tag: "markdown",
-        content: "**📌 今日重点**\n\n" + highlightLines.join("\n"),
+        content: `**📋 五分钟概览**\n\n${overviewLines.join("\n")}`,
       });
     }
   }
 
-  // --- Report links section ---
+  // --- Tool status from personal-digest.json ---
+  if (personalDigest?.toolStatus && Object.keys(personalDigest.toolStatus).length > 0) {
+    const statusLines = Object.entries(personalDigest.toolStatus).map(
+      ([tool, status]) => `• **${escapeMarkdown(tool)}**：${escapeMarkdown(status)}`,
+    );
+    elements.push({ tag: "hr" });
+    elements.push({
+      tag: "markdown",
+      content: `**🔧 主力工具状态**\n\n${statusLines.join("\n")}`,
+    });
+  }
+
+  // --- Single report entry link ---
   elements.push({ tag: "hr" });
 
   const linkLines: string[] = [];
-  const dailyReports = baseReports.filter((r) => !r.includes("weekly") && !r.includes("monthly"));
-  const rollupReports = baseReports.filter((r) => r.includes("weekly") || r.includes("monthly"));
-
-  for (const r of [...dailyReports, ...rollupReports]) {
+  for (const r of baseReports) {
     const zhLabel = NOTIFY_LABELS[r]?.zh ?? r;
     const zhUrl = `${pagesUrl}/#${date}/${r}`;
     const enKey = `${r}-en`;
@@ -265,7 +127,7 @@ function buildCard(ctx: CardContext): unknown {
 
   elements.push({
     tag: "markdown",
-    content: "**📎 完整报告**\n\n" + linkLines.join("\n"),
+    content: "**📎 查看完整报告**\n\n" + linkLines.join("\n"),
   });
 
   elements.push({ tag: "hr" });
@@ -283,18 +145,67 @@ function buildCard(ctx: CardContext): unknown {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+/**
+ * Generates feishu-card.json and feishu-preview.md from a PersonalReportJson.
+ */
+export function generateFeishuArtifacts(
+  date: string,
+  reports: string[],
+  personalDigest: PersonalReportJson,
+  pagesUrl?: string,
+): { cardJson: string; previewMd: string } {
+  const PAGES_URL = (pagesUrl ?? SITE_PAGES_URL).replace(/\/$/, "");
+  const baseReports = reports.filter((r) => !r.endsWith("-en"));
+  const isMonthly = baseReports.includes("ai-monthly");
+  const isWeekly = baseReports.includes("ai-weekly");
+  const type = isMonthly ? "monthly" : isWeekly ? "weekly" : "daily";
+
+  const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
+  const cardJson = JSON.stringify(card, null, 2);
+
+  const lines: string[] = [`# 飞书卡片预览 — ${date}`, "", "以下内容将发送到飞书群：", ""];
+  if (personalDigest.fiveMinuteBrief?.topicGroups?.length) {
+    const eventMap = new Map<string, { title: string; quick: { what: string; why: string } }>();
+    for (const evt of personalDigest.events ?? []) {
+      eventMap.set(evt.id, { title: evt.title, quick: evt.quick });
+    }
+    lines.push("**📋 五分钟概览**");
+    let idx = 0;
+    for (const group of personalDigest.fiveMinuteBrief.topicGroups) {
+      for (const id of group.eventIds ?? []) {
+        const evt = eventMap.get(id);
+        if (!evt) continue;
+        idx++;
+        lines.push(`${idx}. **${evt.title}**`);
+        lines.push(`   ${evt.quick.what} → ${evt.quick.why}`);
+      }
+    }
+    lines.push("");
+  } else {
+    lines.push("（无概览内容）", "");
+  }
+  if (personalDigest.toolStatus && Object.keys(personalDigest.toolStatus).length > 0) {
+    lines.push("**🔧 主力工具状态**");
+    for (const [tool, status] of Object.entries(personalDigest.toolStatus)) {
+      lines.push(`• **${tool}**：${status}`);
+    }
+    lines.push("");
+  }
+  lines.push("**📎 查看完整报告**");
+  for (const r of baseReports) {
+    lines.push(`• ${PAGES_URL}/#${date}/${r}`);
+  }
+
+  return { cardJson, previewMd: lines.join("\n") };
+}
 
 export function buildFeishuMessage(
   date: string,
   reports: string[],
   pagesUrl?: string,
-  highlights?: Highlights | null,
+  personalDigest?: PersonalReportJson | null,
 ): string {
-  // For backward compatibility: returns a markdown string (used by tests)
-  const PAGES_URL = (pagesUrl ?? process.env["PAGES_URL"] ?? PAGES_URL_DEFAULT).replace(/\/$/, "");
+  const PAGES_URL = (pagesUrl ?? SITE_PAGES_URL).replace(/\/$/, "");
   const baseReports = reports.filter((r) => !r.endsWith("-en"));
   const isWeekly = baseReports.includes("ai-weekly");
   const isMonthly = baseReports.includes("ai-monthly");
@@ -303,12 +214,40 @@ export function buildFeishuMessage(
   const suffix = isMonthly ? " 月报" : isWeekly ? " 周报" : "";
   const lines: string[] = [`${icon} **agents-radar${suffix} · ${date}**`];
 
+  // Five-minute brief from personal-digest
+  if (personalDigest?.fiveMinuteBrief?.topicGroups?.length) {
+    const eventMap = new Map<string, { title: string; quick: { what: string; why: string } }>();
+    for (const evt of personalDigest.events ?? []) {
+      eventMap.set(evt.id, { title: evt.title, quick: evt.quick });
+    }
+    lines.push("");
+    lines.push("**📋 五分钟概览**");
+    let idx = 0;
+    for (const group of personalDigest.fiveMinuteBrief.topicGroups) {
+      for (const id of group.eventIds ?? []) {
+        const evt = eventMap.get(id);
+        if (!evt) continue;
+        idx++;
+        lines.push(`${idx}. **${evt.title}**`);
+        lines.push(`   ${evt.quick.what} → ${evt.quick.why}`);
+      }
+    }
+  }
+
+  // Tool status from personal-digest
+  if (personalDigest?.toolStatus && Object.keys(personalDigest.toolStatus).length > 0) {
+    lines.push("");
+    lines.push("**🔧 主力工具状态**");
+    for (const [tool, status] of Object.entries(personalDigest.toolStatus)) {
+      lines.push(`• **${tool}**：${status}`);
+    }
+  }
+
+  // Report links
   const ordered = [
     ...baseReports.filter((r) => !r.includes("weekly") && !r.includes("monthly")),
     ...baseReports.filter((r) => r.includes("weekly") || r.includes("monthly")),
   ];
-
-  const zhHighlights = highlights?.zh ?? {};
 
   for (const r of ordered) {
     const zhLabel = NOTIFY_LABELS[r]?.zh ?? r;
@@ -323,13 +262,6 @@ export function buildFeishuMessage(
     } else {
       lines.push(`• [${zhLabel}](${zhUrl})`);
     }
-
-    const items = zhHighlights[r];
-    if (items?.length) {
-      for (const h of items) {
-        lines.push(`  ◦ ${h}`);
-      }
-    }
   }
 
   lines.push(`\n[🌐 Web UI](${PAGES_URL})  ·  [⊕ RSS](${PAGES_URL}/feed.xml)`);
@@ -337,56 +269,210 @@ export function buildFeishuMessage(
 }
 
 // ---------------------------------------------------------------------------
-// Main — only runs when executed directly (tsx src/feishu.ts)
+// Pre-send publication check with bounded retry
 // ---------------------------------------------------------------------------
 
-async function main(): Promise<void> {
-  const hasApp = !!process.env["FEISHU_APP_ID"];
-  const webhooks = getWebhookUrls();
-
-  if (!hasApp && !webhooks.length) {
-    console.log("[feishu] Neither FEISHU_APP_ID nor FEISHU_WEBHOOK_URLS set — skipping.");
-    return;
+export async function checkReportPublished(
+  pagesUrl: string,
+  date: string,
+  expectedGeneratedAt: string,
+  maxRetries = 6,
+  intervalMs = 10_000,
+): Promise<string | null> {
+  if (!expectedGeneratedAt || !expectedGeneratedAt.trim()) {
+    return "expectedGeneratedAt 为空，拒绝发送";
   }
 
-  if (!fs.existsSync("manifest.json")) {
-    console.log("[feishu] manifest.json not found — skipping.");
-    return;
-  }
+  const base = pagesUrl.replace(/\/$/, "");
 
-  const { dates } = JSON.parse(fs.readFileSync("manifest.json", "utf-8")) as {
-    dates: { date: string; reports: string[] }[];
-  };
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const bust = Date.now();
 
-  const latest = dates?.[0];
-  if (!latest) {
-    console.log("[feishu] manifest is empty — skipping.");
-    return;
-  }
-  const { date, reports } = latest;
-
-  // Load highlights if available
-  let highlights: Highlights | null = null;
-  const highlightsPath = path.join("digests", date, "highlights.json");
-  if (fs.existsSync(highlightsPath)) {
+    // 1. Check manifest
     try {
-      highlights = JSON.parse(fs.readFileSync(highlightsPath, "utf-8")) as Highlights;
-    } catch {
-      console.log("[feishu] Failed to parse highlights.json — sending without highlights.");
+      const res = await fetch(`${base}/manifest.json?_=${bust}`);
+      if (!res.ok) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `manifest.json 请求失败 (${res.status})`;
+      }
+      const { dates } = (await res.json()) as { dates: Array<{ date: string; reports: string[] }> };
+      const entry = dates?.find((d) => d.date === date);
+      if (!entry) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `线上 manifest 不包含 ${date}（重试 ${maxRetries} 次后）`;
+      }
+      if (!entry.reports.includes("ai-personal")) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `${date} 的线上 manifest 不包含 ai-personal（重试 ${maxRetries} 次后）`;
+      }
+    } catch (e) {
+      if (attempt < maxRetries) {
+        await delay(intervalMs);
+        continue;
+      }
+      return `manifest.json 请求异常: ${e instanceof Error ? e.message : String(e)}`;
     }
+
+    // 2. Check ai-personal.md returns 200
+    try {
+      const res = await fetch(`${base}/digests/${date}/ai-personal.md?_=${bust}`);
+      if (!res.ok) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `ai-personal.md 请求失败 (${res.status})（重试 ${maxRetries} 次后）`;
+      }
+    } catch (e) {
+      if (attempt < maxRetries) {
+        await delay(intervalMs);
+        continue;
+      }
+      return `ai-personal.md 请求异常: ${e instanceof Error ? e.message : String(e)}`;
+    }
+
+    // 3. Check personal-digest.json generatedAt matches
+    try {
+      const res = await fetch(`${base}/digests/${date}/personal-digest.json?_=${bust}`);
+      if (!res.ok) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `personal-digest.json 请求失败 (${res.status})（重试 ${maxRetries} 次后）`;
+      }
+      const remoteJson = (await res.json()) as { generatedAt?: string };
+      if (!remoteJson.generatedAt) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `远端 personal-digest.json 缺少 generatedAt（重试 ${maxRetries} 次后）`;
+      }
+      if (remoteJson.generatedAt !== expectedGeneratedAt) {
+        if (attempt < maxRetries) {
+          await delay(intervalMs);
+          continue;
+        }
+        return `远端 generatedAt 不一致：期望 ${expectedGeneratedAt}，实际 ${remoteJson.generatedAt}（重试 ${maxRetries} 次后）`;
+      }
+    } catch (e) {
+      if (attempt < maxRetries) {
+        await delay(intervalMs);
+        continue;
+      }
+      return `personal-digest.json 请求异常: ${e instanceof Error ? e.message : String(e)}`;
+    }
+
+    return null; // success
   }
 
-  // Load opportunity card if available (preferred over highlights)
-  let opportunity: OpportunityCard | null = null;
-  const oppPath = path.join("digests", date, "opportunity-card.json");
-  if (fs.existsSync(oppPath)) {
-    try {
-      const allLangs = JSON.parse(fs.readFileSync(oppPath, "utf-8")) as Record<string, OpportunityCard>;
-      opportunity = allLangs["zh"] ?? null;
-    } catch {
-      console.log("[feishu] Failed to parse opportunity-card.json — falling back to highlights.");
-    }
+  return `发布检查超时（重试 ${maxRetries} 次）`;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---------------------------------------------------------------------------
+// Manifest validation — pure, no side effects
+// ---------------------------------------------------------------------------
+
+export interface ManifestEntry {
+  date: string;
+  reports: string[];
+}
+
+export interface ManifestValidationResult {
+  ok: boolean;
+  entry?: ManifestEntry;
+  error?: string;
+}
+
+export function validateManifestEntry(
+  dates: ManifestEntry[] | null | undefined,
+  reportDate: string,
+): ManifestValidationResult {
+  if (!dates || !Array.isArray(dates) || dates.length === 0) {
+    return { ok: false, error: "manifest is empty or invalid" };
   }
+  const entry = dates.find((d) => d.date === reportDate);
+  if (!entry) {
+    return { ok: false, error: `${reportDate} not in manifest` };
+  }
+  if (!entry.reports || !entry.reports.includes("ai-personal")) {
+    return { ok: false, error: `${reportDate} manifest entry does not include ai-personal` };
+  }
+  return { ok: true, entry };
+}
+
+// ---------------------------------------------------------------------------
+// Testable orchestration — extracted from main()
+// ---------------------------------------------------------------------------
+
+export interface FeishuSendResult {
+  success: boolean;
+  skipped: boolean;
+  error?: string;
+}
+
+export interface FeishuSendDeps {
+  env: Record<string, string>;
+  fetchManifest: () => Promise<{ dates: ManifestEntry[] }>;
+  readPersonalDigest: (date: string) => PersonalReportJson;
+  fetchFn: typeof globalThis.fetch;
+  stateStore: NotificationStateStore;
+  checkPublished: (pagesUrl: string, date: string, generatedAt: string) => Promise<string | null>;
+  forceSend?: boolean;
+}
+
+export async function executeFeishuSend(deps: FeishuSendDeps): Promise<FeishuSendResult> {
+  const {
+    env,
+    fetchManifest,
+    readPersonalDigest,
+    fetchFn,
+    stateStore,
+    checkPublished,
+    forceSend = false,
+  } = deps;
+
+  const hasApp = !!env["FEISHU_APP_ID"];
+  const webhookUrls = [
+    ...new Set(
+      (env["FEISHU_WEBHOOK_URLS"] ?? env["FEISHU_WEBHOOK_URL"] ?? "")
+        .split(",")
+        .map((u: string) => u.trim())
+        .filter(Boolean),
+    ),
+  ];
+
+  if (!hasApp && !webhookUrls.length) {
+    return { success: true, skipped: true };
+  }
+
+  const reportDate = env["REPORT_DATE"] ?? "";
+  if (!reportDate) {
+    return { success: false, skipped: false, error: "REPORT_DATE not set" };
+  }
+
+  const { dates } = await fetchManifest();
+  const manifestResult = validateManifestEntry(dates, reportDate);
+  if (!manifestResult.ok) {
+    return { success: false, skipped: false, error: manifestResult.error };
+  }
+  const { date, reports } = manifestResult.entry!;
+
+  const personalDigest = readPersonalDigest(date);
 
   // Determine report type
   const baseReports = reports.filter((r) => !r.endsWith("-en"));
@@ -394,18 +480,181 @@ async function main(): Promise<void> {
   const isWeekly = baseReports.includes("ai-weekly");
   const type = isMonthly ? "monthly" : isWeekly ? "weekly" : "daily";
 
-  const PAGES_URL = (process.env["PAGES_URL"] ?? PAGES_URL_DEFAULT).replace(/\/$/, "");
+  // Dedup check — per-destination keys
+  const PAGES_URL = (env["PAGES_URL"] ?? SITE_PAGES_URL).replace(/\/$/, "");
 
-  const card = buildCard({ date, reports, pagesUrl: PAGES_URL, highlights, opportunity, type });
+  if (hasApp) {
+    // Open API: single destination
+    const destination = env["FEISHU_CHAT_ID"] ?? "";
+    const notifKey = makeNotificationKey("feishu-openapi", type, date, destination);
 
-  const mode = hasApp ? "Open API" : `${webhooks.length} webhook(s)`;
-  console.log(`[feishu] Sending ${type} card to ${mode} for ${date} (${reports.length} reports)…`);
-  await sendCard(card);
-  console.log("[feishu] Done!");
+    if (stateStore.isAlreadySent(notifKey) && !forceSend) {
+      return { success: true, skipped: true };
+    }
+
+    // Pages publication gate
+    const publishError = await checkPublished(PAGES_URL, date, personalDigest.generatedAt);
+    if (publishError) {
+      return { success: false, skipped: false, error: `Pages 发布检查失败: ${publishError}` };
+    }
+
+    const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
+    const uuid = makeFeishuUuid(type, date, destination, forceSend);
+
+    try {
+      const chatId = env["FEISHU_CHAT_ID"] ?? "";
+      if (!chatId) return { success: false, skipped: false, error: "FEISHU_CHAT_ID is required" };
+
+      const tokenResp = await fetchFn(
+        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            app_id: env["FEISHU_APP_ID"] ?? "",
+            app_secret: env["FEISHU_APP_SECRET"] ?? "",
+          }),
+        },
+      );
+      const tokenData = (await tokenResp.json()) as { code: number; tenant_access_token?: string };
+      if (tokenData.code !== 0 || !tokenData.tenant_access_token) {
+        return { success: false, skipped: false, error: `Token error ${tokenData.code}` };
+      }
+
+      const sendResp = await fetchFn(
+        "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${tokenData.tenant_access_token}`,
+          },
+          body: JSON.stringify({
+            receive_id: chatId,
+            msg_type: "interactive",
+            content: JSON.stringify(card),
+            uuid,
+          }),
+        },
+      );
+      if (!sendResp.ok) return { success: false, skipped: false, error: `Send API ${sendResp.status}` };
+      const sendData = (await sendResp.json()) as { code: number; msg: string };
+      if (sendData.code !== 0)
+        return { success: false, skipped: false, error: `Send error ${sendData.code}: ${sendData.msg}` };
+
+      stateStore.recordSend(notifKey);
+      return { success: true, skipped: false };
+    } catch (e) {
+      return { success: false, skipped: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  // Webhook path — per-webhook dedup
+  const pendingUrls: string[] = [];
+  for (const url of webhookUrls) {
+    const whKey = makeNotificationKey("feishu-webhook", type, date, url);
+    if (stateStore.isAlreadySent(whKey) && !forceSend) continue;
+    pendingUrls.push(url);
+  }
+
+  if (pendingUrls.length === 0) {
+    return { success: true, skipped: true };
+  }
+
+  // Pages publication gate (once, only if there are pending webhooks)
+  const publishError = await checkPublished(PAGES_URL, date, personalDigest.generatedAt);
+  if (publishError) {
+    return { success: false, skipped: false, error: `Pages 发布检查失败: ${publishError}` };
+  }
+
+  const card = buildCard({ date, reports, pagesUrl: PAGES_URL, personalDigest, type });
+  const failedUrls: string[] = [];
+
+  for (const url of pendingUrls) {
+    const whKey = makeNotificationKey("feishu-webhook", type, date, url);
+    try {
+      const res = await fetchFn(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ msg_type: "interactive", card }),
+      });
+      if (!res.ok) {
+        failedUrls.push(url);
+        continue;
+      }
+      stateStore.recordSend(whKey);
+    } catch {
+      failedUrls.push(url);
+    }
+  }
+
+  if (failedUrls.length > 0) {
+    return {
+      success: false,
+      skipped: false,
+      error: `${failedUrls.length}/${pendingUrls.length} webhook(s) failed`,
+    };
+  }
+
+  return { success: true, skipped: false };
 }
 
-// Only auto-send when run directly (`tsx src/feishu.ts`). Guard prevents an
-// accidental send when another module imports from here.
+// ---------------------------------------------------------------------------
+// Generate deterministic uuid (exported for testing)
+// ---------------------------------------------------------------------------
+
+export function makeFeishuUuid(
+  reportType: string,
+  date: string,
+  destination: string,
+  forceSend: boolean,
+): string {
+  if (forceSend) {
+    const base = makeFeishuIdempotencyKey(reportType, date, destination);
+    return `${base}-${crypto.randomBytes(4).toString("hex")}`.slice(0, 50);
+  }
+  return makeFeishuIdempotencyKey(reportType, date, destination);
+}
+
+// ---------------------------------------------------------------------------
+// Main — only runs when executed directly (tsx src/feishu.ts)
+// ---------------------------------------------------------------------------
+
+async function main(): Promise<void> {
+  const result = await executeFeishuSend({
+    env: process.env as Record<string, string>,
+    fetchManifest: async () => {
+      if (!fs.existsSync("manifest.json")) {
+        throw new Error("manifest.json not found");
+      }
+      return JSON.parse(fs.readFileSync("manifest.json", "utf-8"));
+    },
+    readPersonalDigest: (date: string) => {
+      const digestPath = path.join("digests", date, "personal-digest.json");
+      if (!fs.existsSync(digestPath)) throw new Error("personal-digest.json not found");
+      const raw = JSON.parse(fs.readFileSync(digestPath, "utf-8"));
+      const schemaError = guardReportSchema(raw);
+      if (schemaError) throw new Error(`Schema invalid: ${schemaError}`);
+      return raw as PersonalReportJson;
+    },
+    fetchFn: globalThis.fetch,
+    stateStore: createProductionStore(),
+    checkPublished: checkReportPublished,
+    forceSend: process.env["FORCE_SEND"] === "true",
+  });
+
+  if (!result.success) {
+    console.error(`[feishu] ${result.error}`);
+    process.exit(1);
+  }
+  if (result.skipped) {
+    console.log("[feishu] Skipped (no credentials or already sent).");
+  } else {
+    console.log("[feishu] Done!");
+  }
+}
+
+// Only auto-send when run directly (`tsx src/feishu.ts`).
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((e: unknown) => {
     console.error("[feishu]", e instanceof Error ? e.message : e);

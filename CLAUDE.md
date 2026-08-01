@@ -51,42 +51,42 @@ The pipeline runs in four sequential phases, each implemented as a named async f
 
 ## Source files
 
-| File | Responsibility |
-|------|---------------|
-| `src/index.ts` | Orchestration: repo config, phase functions, `main()` |
-| `src/i18n.ts` | Centralized bilingual strings: `Lang` type, report titles, issue labels, footer text, `REPORT_LABELS`, `NOTIFY_LABELS` |
-| `src/github.ts` | GitHub API helpers: `fetchRecentItems`, `fetchRecentReleases`, `fetchSkillsData`, `createGitHubIssue`; shared `RepoFetch` type |
-| `src/prompts.ts` | LLM prompt builders for repo reports: `buildCliPrompt`, `buildPeerPrompt`, `buildComparisonPrompt`, `buildPeersComparisonPrompt`, `buildSkillsPrompt` |
-| `src/prompts-data.ts` | LLM prompt builders for data-source reports: `buildTrendingPrompt`, `buildWebReportPrompt`, `buildHnPrompt`, `buildWeeklyPrompt`, `buildMonthlyPrompt` |
-| `src/report.ts` | `callLlm` (with concurrency limiter), `saveFile`, `autoGenFooter` (uses i18n), LLM token budget constants |
-| `src/report-builders.ts` | `buildCliReportContent`, `buildOpenclawReportContent` — assemble final Markdown strings for CLI and OpenClaw reports |
-| `src/report-savers.ts` | `saveWebReport`, `saveTrendingReport`, `saveHnReport` — LLM call + file save + optional GitHub issue |
-| `src/date.ts` | Date and timing utilities: `toCstDateStr`, `toUtcStr`, `sleep` |
-| `src/rollup.ts` | Weekly and monthly rollup report generator |
-| `src/providers/types.ts` | `LlmProvider` interface, `ProviderName` type, `VALID_PROVIDER_NAMES` |
-| `src/providers/openai-compatible.ts` | `OpenAICompatibleProvider` — shared base class for OpenAI-compatible providers |
-| `src/providers/anthropic.ts` | `AnthropicProvider` — Anthropic SDK wrapper |
-| `src/providers/openai.ts` | `OpenAIProvider` — extends `OpenAICompatibleProvider` |
-| `src/providers/github-copilot.ts` | `GitHubCopilotProvider` — extends `OpenAICompatibleProvider` |
-| `src/providers/openrouter.ts` | `OpenRouterProvider` — extends `OpenAICompatibleProvider` |
-| `src/providers/deepseek.ts` | `DeepSeekProvider` — extends `OpenAICompatibleProvider` |
-| `src/providers/index.ts` | `createProvider` factory + barrel re-exports |
-| `src/web.ts` | Sitemap-based web content fetching; state persisted to `digests/web-state.json` |
-| `src/trending.ts` | GitHub Trending HTML scraper + Search API topic queries |
-| `src/hn.ts` | Hacker News top AI stories via Algolia HN Search API |
-| `src/generate-manifest.ts` | Generates `manifest.json` (sidebar data for Web UI) and `feed.xml` (RSS 2.0 feed) |
+| File                                 | Responsibility                                                                                                                                         |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/index.ts`                       | Orchestration: repo config, phase functions, `main()`                                                                                                  |
+| `src/i18n.ts`                        | Centralized bilingual strings: `Lang` type, report titles, issue labels, footer text, `REPORT_LABELS`, `NOTIFY_LABELS`                                 |
+| `src/github.ts`                      | GitHub API helpers: `fetchRecentItems`, `fetchRecentReleases`, `fetchSkillsData`, `createGitHubIssue`; shared `RepoFetch` type                         |
+| `src/prompts.ts`                     | LLM prompt builders for repo reports: `buildCliPrompt`, `buildPeerPrompt`, `buildComparisonPrompt`, `buildPeersComparisonPrompt`, `buildSkillsPrompt`  |
+| `src/prompts-data.ts`                | LLM prompt builders for data-source reports: `buildTrendingPrompt`, `buildWebReportPrompt`, `buildHnPrompt`, `buildWeeklyPrompt`, `buildMonthlyPrompt` |
+| `src/report.ts`                      | `callLlm` (with concurrency limiter), `saveFile`, `autoGenFooter` (uses i18n), LLM token budget constants                                              |
+| `src/report-builders.ts`             | `buildCliReportContent`, `buildOpenclawReportContent` — assemble final Markdown strings for CLI and OpenClaw reports                                   |
+| `src/report-savers.ts`               | `saveWebReport`, `saveTrendingReport`, `saveHnReport` — LLM call + file save + optional GitHub issue                                                   |
+| `src/date.ts`                        | Date and timing utilities: `toCstDateStr`, `toUtcStr`, `sleep`                                                                                         |
+| `src/rollup.ts`                      | Weekly and monthly rollup report generator                                                                                                             |
+| `src/providers/types.ts`             | `LlmProvider` interface, `ProviderName` type, `VALID_PROVIDER_NAMES`                                                                                   |
+| `src/providers/openai-compatible.ts` | `OpenAICompatibleProvider` — shared base class for OpenAI-compatible providers                                                                         |
+| `src/providers/anthropic.ts`         | `AnthropicProvider` — Anthropic SDK wrapper                                                                                                            |
+| `src/providers/openai.ts`            | `OpenAIProvider` — extends `OpenAICompatibleProvider`                                                                                                  |
+| `src/providers/github-copilot.ts`    | `GitHubCopilotProvider` — extends `OpenAICompatibleProvider`                                                                                           |
+| `src/providers/openrouter.ts`        | `OpenRouterProvider` — extends `OpenAICompatibleProvider`                                                                                              |
+| `src/providers/deepseek.ts`          | `DeepSeekProvider` — extends `OpenAICompatibleProvider`                                                                                                |
+| `src/providers/index.ts`             | `createProvider` factory + barrel re-exports                                                                                                           |
+| `src/web.ts`                         | Sitemap-based web content fetching; state persisted to `digests/web-state.json`                                                                        |
+| `src/trending.ts`                    | GitHub Trending HTML scraper + Search API topic queries                                                                                                |
+| `src/hn.ts`                          | Hacker News top AI stories via Algolia HN Search API                                                                                                   |
+| `src/generate-manifest.ts`           | Generates `manifest.json` (sidebar data for Web UI) and `feed.xml` (RSS 2.0 feed)                                                                      |
 
 ## Report outputs
 
 Files written to `digests/YYYY-MM-DD/`:
 
-| File | Label | Notes |
-|------|-------|-------|
-| `ai-cli.md` | `digest` | Always generated |
-| `ai-agents.md` | `openclaw` | Always generated |
-| `ai-web.md` | `web` | Skipped if no new sitemap content |
+| File             | Label      | Notes                             |
+| ---------------- | ---------- | --------------------------------- |
+| `ai-cli.md`      | `digest`   | Always generated                  |
+| `ai-agents.md`   | `openclaw` | Always generated                  |
+| `ai-web.md`      | `web`      | Skipped if no new sitemap content |
 | `ai-trending.md` | `trending` | Skipped if both data sources fail |
-| `ai-hn.md` | `hn` | Skipped if Algolia fetch fails |
+| `ai-hn.md`       | `hn`       | Skipped if Algolia fetch fails    |
 
 ## Tracked sources
 
@@ -113,7 +113,7 @@ Files written to `digests/YYYY-MM-DD/`:
 ## Web UI & RSS Feed
 
 - Web UI: `index.html` reads `manifest.json` to build the sidebar, then fetches `digests/YYYY-MM-DD/report.md` on demand.
-- RSS Feed: `feed.xml` at the repo root. Generated by `src/generate-manifest.ts` in the same `pnpm manifest` step. Contains the latest 30 items (newest first) across all report types. Item links use hash routing: `https://duanyytop.github.io/agents-radar/#YYYY-MM-DD/report`.
+- RSS Feed: `feed.xml` at the repo root. Generated by `src/generate-manifest.ts` in the same `pnpm manifest` step. Contains the latest 30 items (newest first) across all report types. Item links use hash routing: `https://1535385491.github.io/Opportunity-Radar/#YYYY-MM-DD/report`.
 - Both `manifest.json` and `feed.xml` are committed together in the "Commit manifest and feed" GHA step.
 - The `REPORT_LABELS` map in `src/i18n.ts` must be kept in sync with the `LABELS` object in `index.html` when adding new report types.
 

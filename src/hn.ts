@@ -53,8 +53,20 @@ interface AlgoliaResponse {
 // Fetch
 // ---------------------------------------------------------------------------
 
-export async function fetchHnData(): Promise<HnData> {
-  const since = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+/**
+ * Calculates the Algolia `created_at_i` filter from an ISO-8601 "since" string.
+ * Falls back to 24 hours ago if `since` is not provided.
+ */
+function sinceToUnix(since?: string): number {
+  if (since) {
+    const parsed = Date.parse(since);
+    if (!isNaN(parsed)) return Math.floor(parsed / 1000);
+  }
+  return Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
+}
+
+export async function fetchHnData(since?: string): Promise<HnData> {
+  const sinceUnix = sinceToUnix(since);
   const seen = new Map<string, HnStory>();
 
   try {
@@ -65,7 +77,7 @@ export async function fetchHnData(): Promise<HnData> {
             `https://hn.algolia.com/api/v1/search_by_date` +
             `?tags=story` +
             `&query=${encodeURIComponent(q)}` +
-            `&numericFilters=created_at_i>${since}` +
+            `&numericFilters=created_at_i>${sinceUnix}` +
             `&hitsPerPage=30`;
           const resp = await fetch(url, {
             headers: { "User-Agent": "agents-radar/1.0" },

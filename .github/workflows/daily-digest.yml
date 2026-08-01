@@ -6,6 +6,10 @@ on:
     - cron: "0 0 * * 1,3,5"
   workflow_dispatch:
 
+concurrency:
+  group: daily-digest
+  cancel-in-progress: false
+
 permissions:
   contents: write
   issues: write
@@ -13,8 +17,6 @@ permissions:
 jobs:
   digest:
     runs-on: ubuntu-latest
-    # Web content fetching adds ~60-120 s of HTTP requests on incremental runs;
-    # the first-ever run (fetching 50 articles) may need up to 20 min.
     timeout-minutes: 40
 
     steps:
@@ -32,6 +34,10 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Compute report date (Asia/Shanghai)
+        id: date
+        run: echo "REPORT_DATE=$(TZ=Asia/Shanghai date +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - name: Run daily digest
         env:
@@ -52,8 +58,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No new digest files to commit"
           else
-            DATE=$(date -u +%Y-%m-%d)
-            git commit -m "digest: ${DATE} daily digest"
+            git commit -m "digest: ${{ steps.date.outputs.REPORT_DATE }} daily digest"
             git pull --rebase
             git push
           fi
@@ -74,7 +79,8 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || '@agents_radar' }}
-          PAGES_URL: https://duanyytop.github.io/agents-radar
+          PAGES_URL: https://1535385491.github.io/Opportunity-Radar
+          REPORT_DATE: ${{ steps.date.outputs.REPORT_DATE }}
         run: pnpm notify
 
       - name: Send Feishu notification
@@ -82,6 +88,22 @@ jobs:
           FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           FEISHU_CHAT_ID: ${{ secrets.FEISHU_CHAT_ID }}
-          PAGES_URL: https://duanyytop.github.io/agents-radar
+          PAGES_URL: https://1535385491.github.io/Opportunity-Radar
+          REPORT_DATE: ${{ steps.date.outputs.REPORT_DATE }}
         run: pnpm notify:feishu
 
+      - name: Persist notification state
+        if: always()
+        run: |
+          if [ ! -f digests/notification-state.json ]; then
+            echo "No notification state file to persist — skipping."
+            exit 0
+          fi
+          git add digests/notification-state.json
+          if git diff --cached --quiet; then
+            echo "Notification state unchanged — skipping commit."
+            exit 0
+          fi
+          git commit -m "chore: persist notification state"
+          git pull --rebase
+          git push

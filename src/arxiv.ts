@@ -104,8 +104,12 @@ async function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function fetchArxivData(): Promise<ArxivData> {
+export async function fetchArxivData(since?: string): Promise<ArxivData> {
   const seen = new Map<string, ArxivPaper>();
+
+  // Use `since` as cutoff if provided, otherwise 48h (ArXiv has ~1-day publishing delay)
+  const sinceMs = since ? Date.parse(since) : NaN;
+  const cutoff = !isNaN(sinceMs) ? sinceMs : Date.now() - 48 * 60 * 60 * 1000;
 
   for (let i = 0; i < CATEGORIES.length; i++) {
     const cat = CATEGORIES[i]!;
@@ -145,8 +149,7 @@ export async function fetchArxivData(): Promise<ArxivData> {
     }
   }
 
-  // Filter to last 48h (ArXiv has a ~1-day publishing delay, so 24h would miss today's batch)
-  const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+  // Filter to cutoff time
   const papers = [...seen.values()]
     .filter((p) => new Date(p.published).getTime() > cutoff)
     .sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime())

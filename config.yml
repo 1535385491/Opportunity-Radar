@@ -92,3 +92,54 @@ openclaw_peers:
   - id: zeroclaw
     repo: zeroclaw-labs/zeroclaw
     name: ZeroClaw
+
+# ── Personal report preferences ──────────────────────────────────────────────
+# Controls how the unified personal digest is generated.
+# Edit these values to change what matters to you.
+
+personal_report:
+  primary_tools:
+    - codex
+    - claude-code
+  platforms:
+    - windows
+  usage_context: "个人项目开发、智能诊断相关项目、自动化信息收集工具"
+  model_backend: mimo
+  uses_anthropic_account: false
+  uses_anthropic_subscription: false
+  five_minute_limit: 6
+  full_report_limit: 16
+  focus_topics:
+    - "Codex、Claude Code 客户端的重大能力、可靠性和工作流变化"
+    - "RAG 与实际项目知识库"
+    - "Agent 长期记忆、状态数据库和跨会话记忆"
+    - "Context Engineering、代码上下文管理和 Code RAG"
+    - "RAG、记忆系统与 Agent 的评测方法"
+    - "可恢复、可持久化、可观测的 Agent 工作流"
+    - "文档、表格、PDF、图片等多模态知识摄取"
+    - "时序数据、智能诊断、故障案例推理和可解释性"
+    - "模型路由、第三方模型后端和 Mimo API 兼容性"
+    - "个性化信息收集、筛选、去重和报告生成"
+    - "MCP、工具调用可靠性和工程安全性"
+    - "重大安全与可靠性风险"
+  secondary_topics:
+    - "GraphRAG 与知识图谱"
+    - "结构化输出和数据契约"
+    - "本地、离线、隐私保护 AI"
+    - "数据反馈闭环和小样本学习"
+    - "Agent 可观测性与评测"
+    - "RAG、Agent、MCP 安全"
+  excluded_topics:
+    - "活跃度、成熟度与生态健康度"
+    - "项目定位和市场战略"
+    - "社区治理与争议"
+    - "纯 UI 细节"
+    - "项目自身 CI、贡献和维护流程"
+    - "无实际落地的远期 RFC"
+    - "纯版本号"
+    - "常规 Claw 项目动态"
+    - "Anthropic Claude 模型/账号/订阅价格变化"
+  overview_limit: 8
+  detail_limit: 20
+  commercial_mode: exceptional_only
+  unknown_project_context: true

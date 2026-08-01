@@ -7,6 +7,8 @@ import {
   urlCategory,
   titleFromUrl,
   emptyState,
+  contentHash,
+  extractPublishDate,
 } from "../web.ts";
 
 // ---------------------------------------------------------------------------
@@ -189,8 +191,8 @@ describe("emptyState", () => {
   it("returns valid empty state structure", () => {
     const state = emptyState();
     expect(state).toEqual({
-      anthropic: { lastChecked: "", seenUrls: {} },
-      openai: { lastChecked: "", seenUrls: {} },
+      anthropic: { lastChecked: "", seenUrls: {}, contentHashes: {} },
+      openai: { lastChecked: "", seenUrls: {}, contentHashes: {} },
     });
   });
 
@@ -200,5 +202,55 @@ describe("emptyState", () => {
     expect(a).not.toBe(b);
     a.anthropic.lastChecked = "modified";
     expect(b.anthropic.lastChecked).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// contentHash
+// ---------------------------------------------------------------------------
+
+describe("contentHash", () => {
+  it("returns a 32-char hex string", () => {
+    const h = contentHash("hello world");
+    expect(h).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it("returns the same hash for the same input", () => {
+    expect(contentHash("abc")).toBe(contentHash("abc"));
+  });
+
+  it("returns different hashes for different inputs", () => {
+    expect(contentHash("abc")).not.toBe(contentHash("def"));
+  });
+
+  it("returns different hash for empty vs non-empty", () => {
+    expect(contentHash("")).not.toBe(contentHash("x"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// extractPublishDate
+// ---------------------------------------------------------------------------
+
+describe("extractPublishDate", () => {
+  it("extracts full date from /YYYY/MM/DD/ URL pattern", () => {
+    expect(extractPublishDate("https://anthropic.com/news/2026/07/25/some-article")).toBe("2026-07-25");
+  });
+
+  it("extracts month from /YYYY/MM/ URL pattern", () => {
+    expect(extractPublishDate("https://anthropic.com/research/2026/03/paper")).toBe("2026-03-01");
+  });
+
+  it("returns null for URLs without date patterns", () => {
+    expect(extractPublishDate("https://anthropic.com/news/some-article")).toBeNull();
+    expect(extractPublishDate("https://openai.com/research/gpt-5")).toBeNull();
+  });
+
+  it("returns null for invalid URLs", () => {
+    expect(extractPublishDate("not-a-url")).toBeNull();
+  });
+
+  it("returns null for partial date patterns", () => {
+    expect(extractPublishDate("https://example.com/2026/article")).toBeNull();
   });
 });

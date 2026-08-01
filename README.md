@@ -6,22 +6,22 @@ A GitHub Actions workflow that runs every morning at 08:00 CST. It aggregates AI
 
 ### Data Sources
 
-| Source | Type | Data |
-|--------|------|------|
-| [GitHub Repos](https://github.com) | API | Issues, PRs, releases from 17+ tracked AI tool repos |
-| [Claude Code Skills](https://github.com/anthropics/skills) | API | Trending skills sorted by community engagement |
-| [GitHub Trending](https://github.com/trending) | HTML + API | Daily trending repos + AI topic search (7-day window) |
-| [Hacker News](https://news.ycombinator.com) | [Algolia API](https://hn.algolia.com/api) | Top 30 AI stories from last 24h, 6 parallel queries |
-| [Product Hunt](https://www.producthunt.com) | GraphQL API | Yesterday's top AI products by votes |
-| [ArXiv](https://arxiv.org) | [ArXiv API](https://export.arxiv.org/api/query) | Latest papers from cs.AI, cs.CL, cs.LG (last 48h) |
-| [Hugging Face](https://huggingface.co) | [Hub API](https://huggingface.co/api/models) | 30 trending models sorted by weekly likes |
-| [Dev.to](https://dev.to) | [Forem API](https://dev.to/api) | Top AI/LLM articles from 5 tags |
-| [Lobste.rs](https://lobste.rs) | JSON API | AI/ML tagged stories from last 7 days |
-| [Anthropic](https://anthropic.com) + [OpenAI](https://openai.com) | Sitemap | New articles detected via `lastmod` diff |
+| Source                                                            | Type                                            | Data                                                  |
+| ----------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------- |
+| [GitHub Repos](https://github.com)                                | API                                             | Issues, PRs, releases from 17+ tracked AI tool repos  |
+| [Claude Code Skills](https://github.com/anthropics/skills)        | API                                             | Trending skills sorted by community engagement        |
+| [GitHub Trending](https://github.com/trending)                    | HTML + API                                      | Daily trending repos + AI topic search (7-day window) |
+| [Hacker News](https://news.ycombinator.com)                       | [Algolia API](https://hn.algolia.com/api)       | Top 30 AI stories from last 24h, 6 parallel queries   |
+| [Product Hunt](https://www.producthunt.com)                       | GraphQL API                                     | Yesterday's top AI products by votes                  |
+| [ArXiv](https://arxiv.org)                                        | [ArXiv API](https://export.arxiv.org/api/query) | Latest papers from cs.AI, cs.CL, cs.LG (last 48h)     |
+| [Hugging Face](https://huggingface.co)                            | [Hub API](https://huggingface.co/api/models)    | 30 trending models sorted by weekly likes             |
+| [Dev.to](https://dev.to)                                          | [Forem API](https://dev.to/api)                 | Top AI/LLM articles from 5 tags                       |
+| [Lobste.rs](https://lobste.rs)                                    | JSON API                                        | AI/ML tagged stories from last 7 days                 |
+| [Anthropic](https://anthropic.com) + [OpenAI](https://openai.com) | Sitemap                                         | New articles detected via `lastmod` diff              |
 
 ## Web UI
 
-**[https://duanyytop.github.io/agents-radar](https://duanyytop.github.io/agents-radar)**
+**[https://1535385491.github.io/Opportunity-Radar](https://1535385491.github.io/Opportunity-Radar)**
 
 Browse all historical digests in a clean, dark-themed interface — no login required. Reports are rendered from the Markdown files in this repo via GitHub Pages.
 
@@ -44,7 +44,7 @@ Subscribe to get daily digest notifications pushed directly to your preferred pl
 
 ## RSS Feed
 
-**[https://duanyytop.github.io/agents-radar/feed.xml](https://duanyytop.github.io/agents-radar/feed.xml)**
+**[https://1535385491.github.io/Opportunity-Radar/feed.xml](https://1535385491.github.io/Opportunity-Radar/feed.xml)**
 
 Subscribe in any RSS reader (Feedly, Reeder, NewsBlur, etc.) to receive new digests automatically. The feed includes the latest 30 reports across all report types, updated daily alongside `manifest.json`.
 
@@ -56,12 +56,12 @@ A hosted [Model Context Protocol](https://modelcontextprotocol.io) server that e
 
 **Available tools:**
 
-| Tool | Description |
-|------|-------------|
+| Tool           | Description                                         |
+| -------------- | --------------------------------------------------- |
 | `list_reports` | List available dates and report types (last N days) |
-| `get_latest` | Fetch the most recent report of a given type |
-| `get_report` | Fetch a specific report by date and type |
-| `search` | Keyword search across recent reports |
+| `get_latest`   | Fetch the most recent report of a given type        |
+| `get_report`   | Fetch a specific report by date and type            |
+| `search`       | Keyword search across recent reports                |
 
 **Claude Desktop setup** — add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
@@ -76,9 +76,10 @@ A hosted [Model Context Protocol](https://modelcontextprotocol.io) server that e
 ```
 
 Restart Claude Desktop after saving. You can then ask Claude things like:
-- *"What's the latest in AI CLI tools?"* → calls `get_latest`
-- *"Search for Claude Code mentions this week"* → calls `search`
-- *"Show me the AI trending report for 2026-03-05"* → calls `get_report`
+
+- _"What's the latest in AI CLI tools?"_ → calls `get_latest`
+- _"Search for Claude Code mentions this week"_ → calls `search`
+- _"Show me the AI trending report for 2026-03-05"_ → calls `get_report`
 
 **OpenClaw setup** — run the following command:
 
@@ -100,9 +101,10 @@ Or add it manually to `~/.openclaw/openclaw.json`:
 ```
 
 You can then ask OpenClaw things like:
-- *"What's the latest in AI CLI tools?"* → calls `get_latest`
-- *"Search for Claude Code mentions this week"* → calls `search`
-- *"Show me the AI trending report for 2026-03-05"* → calls `get_report`
+
+- _"What's the latest in AI CLI tools?"_ → calls `get_latest`
+- _"Search for Claude Code mentions this week"_ → calls `search`
+- _"Show me the AI trending report for 2026-03-05"_ → calls `get_report`
 
 **Self-hosting** — deploy your own instance from the `mcp/` directory:
 
@@ -116,22 +118,22 @@ wrangler deploy
 
 ### AI CLI tools (GitHub)
 
-| Tool | Repository |
-|------|-----------|
-| Claude Code | [anthropics/claude-code](https://github.com/anthropics/claude-code) |
-| OpenAI Codex | [openai/codex](https://github.com/openai/codex) |
-| Gemini CLI | [google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli) |
-| GitHub Copilot CLI | [github/copilot-cli](https://github.com/github/copilot-cli) |
-| Kimi Code CLI | [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli) |
-| OpenCode | [anomalyco/opencode](https://github.com/anomalyco/opencode) |
-| Pi | [badlogic/pi-mono](https://github.com/badlogic/pi-mono) |
-| Qwen Code | [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code) |
-| DeepSeek TUI | [Hmbown/DeepSeek-TUI](https://github.com/Hmbown/DeepSeek-TUI) |
+| Tool               | Repository                                                              |
+| ------------------ | ----------------------------------------------------------------------- |
+| Claude Code        | [anthropics/claude-code](https://github.com/anthropics/claude-code)     |
+| OpenAI Codex       | [openai/codex](https://github.com/openai/codex)                         |
+| Gemini CLI         | [google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli) |
+| GitHub Copilot CLI | [github/copilot-cli](https://github.com/github/copilot-cli)             |
+| Kimi Code CLI      | [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli)           |
+| OpenCode           | [anomalyco/opencode](https://github.com/anomalyco/opencode)             |
+| Pi                 | [badlogic/pi-mono](https://github.com/badlogic/pi-mono)                 |
+| Qwen Code          | [QwenLM/qwen-code](https://github.com/QwenLM/qwen-code)                 |
+| DeepSeek TUI       | [Hmbown/DeepSeek-TUI](https://github.com/Hmbown/DeepSeek-TUI)           |
 
 ### Claude Code Skills (GitHub)
 
-| Source | Repository |
-|--------|-----------|
+| Source             | Repository                                                |
+| ------------------ | --------------------------------------------------------- |
 | Claude Code Skills | [anthropics/skills](https://github.com/anthropics/skills) |
 
 PRs and issues are fetched without a date filter and sorted by popularity (comment count), so the report always reflects the most actively discussed skills — not just the newest.
@@ -140,30 +142,30 @@ PRs and issues are fetched without a date filter and sorted by popularity (comme
 
 OpenClaw is tracked as the primary reference project, alongside several peer projects in the personal AI assistant / autonomous agent space for cross-ecosystem comparison.
 
-| Project | Repository | Stars |
-|---------|-----------|-------|
-| OpenClaw | [openclaw/openclaw](https://github.com/openclaw/openclaw) | 348.1k |
-| NanoBot | [HKUDS/nanobot](https://github.com/HKUDS/nanobot) | 37.9k |
-| Hermes Agent | [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent) | 32.3k |
-| PicoClaw | [sipeed/picoclaw](https://github.com/sipeed/picoclaw) | 27.5k |
-| NanoClaw | [qwibitai/nanoclaw](https://github.com/qwibitai/nanoclaw) | 26.5k |
-| ZeroClaw | [zeroclaw-labs/zeroclaw](https://github.com/zeroclaw-labs/zeroclaw) | 30.1k |
-| CoPaw | [agentscope-ai/CoPaw](https://github.com/agentscope-ai/CoPaw) | 14.4k |
-| IronClaw | [nearai/ironclaw](https://github.com/nearai/ironclaw) | 11.4k |
-| NullClaw | [nullclaw/nullclaw](https://github.com/nullclaw/nullclaw) | 7.0k |
-| LobsterAI | [netease-youdao/LobsterAI](https://github.com/netease-youdao/LobsterAI) | 4.8k |
-| TinyClaw | [TinyAGI/tinyagi](https://github.com/TinyAGI/tinyagi) | 3.5k |
-| Moltis | [moltis-org/moltis](https://github.com/moltis-org/moltis) | 2.5k |
-| ZeptoClaw | [qhkm/zeptoclaw](https://github.com/qhkm/zeptoclaw) | 567 |
+| Project      | Repository                                                                | Stars  |
+| ------------ | ------------------------------------------------------------------------- | ------ |
+| OpenClaw     | [openclaw/openclaw](https://github.com/openclaw/openclaw)                 | 348.1k |
+| NanoBot      | [HKUDS/nanobot](https://github.com/HKUDS/nanobot)                         | 37.9k  |
+| Hermes Agent | [nousresearch/hermes-agent](https://github.com/nousresearch/hermes-agent) | 32.3k  |
+| PicoClaw     | [sipeed/picoclaw](https://github.com/sipeed/picoclaw)                     | 27.5k  |
+| NanoClaw     | [qwibitai/nanoclaw](https://github.com/qwibitai/nanoclaw)                 | 26.5k  |
+| ZeroClaw     | [zeroclaw-labs/zeroclaw](https://github.com/zeroclaw-labs/zeroclaw)       | 30.1k  |
+| CoPaw        | [agentscope-ai/CoPaw](https://github.com/agentscope-ai/CoPaw)             | 14.4k  |
+| IronClaw     | [nearai/ironclaw](https://github.com/nearai/ironclaw)                     | 11.4k  |
+| NullClaw     | [nullclaw/nullclaw](https://github.com/nullclaw/nullclaw)                 | 7.0k   |
+| LobsterAI    | [netease-youdao/LobsterAI](https://github.com/netease-youdao/LobsterAI)   | 4.8k   |
+| TinyClaw     | [TinyAGI/tinyagi](https://github.com/TinyAGI/tinyagi)                     | 3.5k   |
+| Moltis       | [moltis-org/moltis](https://github.com/moltis-org/moltis)                 | 2.5k   |
+| ZeptoClaw    | [qhkm/zeptoclaw](https://github.com/qhkm/zeptoclaw)                       | 567    |
 
 ### GitHub AI Trending
 
 Two data sources are fetched in parallel every day:
 
-| Source | Details |
-|--------|---------|
-| [github.com/trending](https://github.com/trending?since=daily) | Today's trending repos — parsed from HTML; includes today's new star count |
-| GitHub Search API | Repos active in the last 7 days matching 6 AI topics: `llm`, `ai-agent`, `rag`, `vector-database`, `large-language-model`, `machine-learning` |
+| Source                                                         | Details                                                                                                                                       |
+| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| [github.com/trending](https://github.com/trending?since=daily) | Today's trending repos — parsed from HTML; includes today's new star count                                                                    |
+| GitHub Search API                                              | Repos active in the last 7 days matching 6 AI topics: `llm`, `ai-agent`, `rag`, `vector-database`, `large-language-model`, `machine-learning` |
 
 The LLM filters out non-AI repos from the trending list, classifies the rest by dimension (AI infrastructure / agents / applications / models / RAG), and extracts trend signals.
 
@@ -173,10 +175,10 @@ Top AI stories from the last 24 hours, fetched via the [Algolia HN Search API](h
 
 ### Official web content (sitemap-based)
 
-| Organization | Site | Tracked sections |
-|---|---|---|
-| Anthropic | [anthropic.com](https://www.anthropic.com) | `/news/`, `/research/`, `/engineering/`, `/learn/` |
-| OpenAI | [openai.com](https://openai.com) | research, publication, release, company, engineering, milestone, learn-guides, safety, product |
+| Organization | Site                                       | Tracked sections                                                                               |
+| ------------ | ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Anthropic    | [anthropic.com](https://www.anthropic.com) | `/news/`, `/research/`, `/engineering/`, `/learn/`                                             |
+| OpenAI       | [openai.com](https://openai.com)           | research, publication, release, company, engineering, milestone, learn-guides, safety, product |
 
 New articles are detected by comparing sitemap `lastmod` timestamps against a persisted state file (`digests/web-state.json`). On the **first run**, up to 25 recent articles per site are fetched and a comprehensive overview report is generated. On subsequent runs, only new or updated URLs trigger a report; if nothing changed, the web report step is skipped entirely.
 
@@ -219,21 +221,22 @@ openclaw_peers:
 
 Go to **Settings → Secrets and variables → Actions** and add:
 
-| Secret | Required | Description |
-|--------|----------|-------------|
-| `LLM_PROVIDER` | optional | `anthropic` (default), `openai`, `github-copilot`, or `openrouter` |
-| `ANTHROPIC_API_KEY` | if Anthropic | API key — works with both Anthropic and Kimi Code |
-| `ANTHROPIC_BASE_URL` | optional | API endpoint override. Set to `https://api.kimi.com/coding/` for Kimi Code; leave unset for Anthropic |
-| `OPENAI_API_KEY` | if OpenAI | OpenAI API key |
-| `OPENAI_BASE_URL` | optional | OpenAI endpoint override |
-| `OPENROUTER_API_KEY` | if OpenRouter | OpenRouter API key |
-| `TELEGRAM_BOT_TOKEN` | optional | Telegram bot token from [@BotFather](https://t.me/BotFather). If set, a message is sent after each digest run |
-| `TELEGRAM_CHAT_ID` | optional | Telegram chat/channel/group ID to send notifications to |
-| `FEISHU_WEBHOOK_URLS` | optional | Comma-separated Feishu custom bot webhook URLs. If set, a card message is sent to each group after each digest run |
+| Secret                | Required      | Description                                                                                                        |
+| --------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `LLM_PROVIDER`        | optional      | `anthropic` (default), `openai`, `github-copilot`, or `openrouter`                                                 |
+| `ANTHROPIC_API_KEY`   | if Anthropic  | API key — works with both Anthropic and Kimi Code                                                                  |
+| `ANTHROPIC_BASE_URL`  | optional      | API endpoint override. Set to `https://api.kimi.com/coding/` for Kimi Code; leave unset for Anthropic              |
+| `OPENAI_API_KEY`      | if OpenAI     | OpenAI API key                                                                                                     |
+| `OPENAI_BASE_URL`     | optional      | OpenAI endpoint override                                                                                           |
+| `OPENROUTER_API_KEY`  | if OpenRouter | OpenRouter API key                                                                                                 |
+| `TELEGRAM_BOT_TOKEN`  | optional      | Telegram bot token from [@BotFather](https://t.me/BotFather). If set, a message is sent after each digest run      |
+| `TELEGRAM_CHAT_ID`    | optional      | Telegram chat/channel/group ID to send notifications to                                                            |
+| `FEISHU_WEBHOOK_URLS` | optional      | Comma-separated Feishu custom bot webhook URLs. If set, a card message is sent to each group after each digest run |
 
 > `GITHUB_TOKEN` is provided automatically by GitHub Actions. When using `github-copilot` as the provider, the same `GITHUB_TOKEN` is used for LLM calls.
 
 **Setting up Telegram notifications** (optional):
+
 1. Message [@BotFather](https://t.me/BotFather) on Telegram, create a bot, and copy the token
 2. Add the bot to your channel/group, or start a DM with it
 3. Get the chat ID via [@userinfobot](https://t.me/userinfobot) or the [getUpdates](https://core.telegram.org/bots/api#getupdates) API
@@ -253,12 +256,12 @@ To test immediately, go to **Actions → Daily Agents Radar → Run workflow**.
 
 Set `LLM_PROVIDER` to choose which model backend powers the digest generation. Defaults to `anthropic`.
 
-| Provider | `LLM_PROVIDER` | Required env vars | Default model |
-|----------|---------------|-------------------|---------------|
-| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
-| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4o` |
-| GitHub Copilot | `github-copilot` | `GITHUB_TOKEN` | `gpt-4o` |
-| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4` |
+| Provider       | `LLM_PROVIDER`   | Required env vars    | Default model               |
+| -------------- | ---------------- | -------------------- | --------------------------- |
+| Anthropic      | `anthropic`      | `ANTHROPIC_API_KEY`  | `claude-sonnet-4-6`         |
+| OpenAI         | `openai`         | `OPENAI_API_KEY`     | `gpt-4o`                    |
+| GitHub Copilot | `github-copilot` | `GITHUB_TOKEN`       | `gpt-4o`                    |
+| OpenRouter     | `openrouter`     | `OPENROUTER_API_KEY` | `anthropic/claude-sonnet-4` |
 
 Override the model name with `ANTHROPIC_MODEL`, `OPENAI_MODEL`, `GITHUB_COPILOT_MODEL`, or `OPENROUTER_MODEL` respectively.
 
@@ -294,17 +297,17 @@ pnpm start
 
 Files are written to `digests/YYYY-MM-DD/`:
 
-| File | Content | GitHub Issue label |
-|------|---------|-------------------|
-| `ai-cli.md` | CLI digest — cross-tool comparison + per-tool details | `digest` |
-| `ai-agents.md` | OpenClaw deep report + cross-ecosystem comparison + 11 peer details | `openclaw` |
-| `ai-web.md` | Official web content report (only written when new content exists) | `web` |
-| `ai-trending.md` | GitHub AI trending report — repos classified by dimension + trend signals (only written when data is available) | `trending` |
-| `ai-hn.md` | Hacker News AI community digest — top stories + sentiment analysis (only written when fetch succeeds) | `hn` |
-| `ai-ph.md` | Product Hunt AI products digest (only written when `PRODUCTHUNT_TOKEN` is set and data is available) | `ph` |
-| `ai-arxiv.md` | ArXiv AI research digest — key papers from cs.AI/cs.CL/cs.LG | `arxiv` |
-| `ai-hf.md` | Hugging Face trending models digest — sorted by weekly likes | `hf` |
-| `ai-community.md` | Tech community AI digest — Dev.to articles + Lobste.rs stories combined | `community` |
+| File              | Content                                                                                                         | GitHub Issue label |
+| ----------------- | --------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `ai-cli.md`       | CLI digest — cross-tool comparison + per-tool details                                                           | `digest`           |
+| `ai-agents.md`    | OpenClaw deep report + cross-ecosystem comparison + 11 peer details                                             | `openclaw`         |
+| `ai-web.md`       | Official web content report (only written when new content exists)                                              | `web`              |
+| `ai-trending.md`  | GitHub AI trending report — repos classified by dimension + trend signals (only written when data is available) | `trending`         |
+| `ai-hn.md`        | Hacker News AI community digest — top stories + sentiment analysis (only written when fetch succeeds)           | `hn`               |
+| `ai-ph.md`        | Product Hunt AI products digest (only written when `PRODUCTHUNT_TOKEN` is set and data is available)            | `ph`               |
+| `ai-arxiv.md`     | ArXiv AI research digest — key papers from cs.AI/cs.CL/cs.LG                                                    | `arxiv`            |
+| `ai-hf.md`        | Hugging Face trending models digest — sorted by weekly likes                                                    | `hf`               |
+| `ai-community.md` | Tech community AI digest — Dev.to articles + Lobste.rs stories combined                                         | `community`        |
 
 A shared state file `digests/web-state.json` tracks which web URLs have been seen; it is committed alongside the daily digests.
 
@@ -313,6 +316,7 @@ Each report is generated in both Chinese (`ai-cli.md`) and English (`ai-cli-en.m
 ---
 
 `ai-cli.md` / `ai-cli-en.md` structure:
+
 ```
 ## Cross-Tool Comparison
   Ecosystem overview / Activity comparison table / Shared themes / Differentiation / Trend signals
@@ -332,6 +336,7 @@ Each report is generated in both Chinese (`ai-cli.md`) and English (`ai-cli-en.m
 ```
 
 `ai-agents.md` / `ai-agents-en.md` structure:
+
 ```
 Issues: N | PRs: N | Projects covered: 10
 
@@ -358,6 +363,7 @@ Issues: N | PRs: N | Projects covered: 10
 ```
 
 `ai-web.md` / `ai-web-en.md` structure:
+
 ```
 Sources: anthropic.com (N articles) + openai.com (N articles)
 
@@ -370,6 +376,7 @@ Notable details
 ```
 
 `ai-trending.md` / `ai-trending-en.md` structure:
+
 ```
 Sources: GitHub Trending + GitHub Search API
 
@@ -385,6 +392,7 @@ Community focus
 ```
 
 `ai-hn.md` / `ai-hn-en.md` structure:
+
 ```
 Sources: Hacker News (top-30 AI stories, last 24h)
 
@@ -399,6 +407,7 @@ Worth reading
 ```
 
 `ai-weekly.md` / `ai-weekly-en.md` structure (generated every Monday):
+
 ```
 Coverage: YYYY-MM-DD ~ YYYY-MM-DD  (last 7 daily digests)
 
@@ -410,6 +419,7 @@ Outlook
 ```
 
 `ai-monthly.md` / `ai-monthly-en.md` structure (generated on the 1st of each month):
+
 ```
 Sources: N weekly reports  (or sampled daily reports if fewer than 2 weeklies available)
 
@@ -424,10 +434,10 @@ Historical digests are stored in [`digests/`](./digests/). Published issues are 
 
 ## Schedule
 
-| Workflow | Cron | UTC | CST |
-|----------|------|-----|-----|
-| Daily digest | `0 0 * * *` | 00:00 daily | 08:00 daily |
-| Weekly rollup | `0 1 * * 1` | 01:00 Monday | 09:00 Monday |
+| Workflow       | Cron        | UTC              | CST              |
+| -------------- | ----------- | ---------------- | ---------------- |
+| Daily digest   | `0 0 * * *` | 00:00 daily      | 08:00 daily      |
+| Weekly rollup  | `0 1 * * 1` | 01:00 Monday     | 09:00 Monday     |
 | Monthly rollup | `0 2 1 * *` | 02:00 on the 1st | 10:00 on the 1st |
 
 To change the schedule, edit the cron expressions in the corresponding workflow files under `.github/workflows/`.

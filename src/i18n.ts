@@ -38,6 +38,9 @@ export const CLI_REPORT = {
   skillsSource: t("数据来源", "Source"),
   comparison: t("横向对比", "Cross-Tool Comparison"),
   detail: t("各工具详细报告", "Per-Tool Reports"),
+  overview: t("今日概览", "Today's Overview"),
+  primaryTools: t("主力工具详情", "Primary Tool Details"),
+  secondaryTools: t("其他工具动态", "Other Tool Updates"),
 } as const;
 
 export const OPENCLAW_REPORT = {
@@ -99,6 +102,11 @@ export const COMMUNITY_REPORT = {
     lang === "en" ? `💬 Tech Community AI Digest ${dateStr}` : `💬 技术社区 AI 动态日报 ${dateStr}`,
 } as const;
 
+export const PERSONAL_REPORT = {
+  title: t("AI 前沿个人简报", "AI Frontier Personal Briefing"),
+  issueTitle: (dateStr: string) => `📋 AI 前沿个人简报 ${dateStr}`,
+} as const;
+
 export const WEEKLY_REPORT = {
   title: t("AI 工具生态周报", "AI Tools Ecosystem Weekly Report"),
   coverage: t("覆盖日期", "Coverage"),
@@ -145,6 +153,8 @@ export const FOOTER = {
 // ---------------------------------------------------------------------------
 
 export const REPORT_LABELS: Record<string, string> = {
+  "ai-personal": "AI 前沿个人简报",
+  "ai-personal-en": "AI Frontier Personal Briefing",
   "ai-cli": "AI CLI 工具社区动态日报",
   "ai-cli-en": "AI CLI Tools Digest",
   "ai-agents": "AI Agents 生态日报",
@@ -170,6 +180,7 @@ export const REPORT_LABELS: Record<string, string> = {
 };
 
 export const NOTIFY_LABELS: Record<string, Record<Lang, string>> = {
+  "ai-personal": t("AI 前沿个人简报", "AI Frontier Briefing"),
   "ai-cli": t("AI CLI 工具", "AI CLI Tools"),
   "ai-agents": t("AI Agents 生态", "AI Agents Ecosystem"),
   "ai-web": t("官网动态", "Official Updates"),
