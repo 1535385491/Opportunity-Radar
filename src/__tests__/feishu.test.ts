@@ -732,17 +732,19 @@ describe("workflow checks", () => {
   it("persist uses if: always()", () => {
     expect(wf.split("Persist notification state")[1] ?? "").toContain("always()");
   });
-  it("persist checks file existence", () => {
+  it("persist checks file existence before git add", () => {
     const section = wf.split("Persist notification state")[1] ?? "";
     expect(section).toContain("notification-state.json");
-    // File check must come before git add
     const fileCheckPos = section.indexOf("! -f digests/notification-state.json");
+    const exitPos = section.indexOf("exit 0", fileCheckPos);
     const gitAddPos = section.indexOf("git add digests/notification-state.json");
-    expect(fileCheckPos).toBeGreaterThan(-1);
-    expect(gitAddPos).toBeGreaterThan(-1);
-    expect(fileCheckPos).toBeLessThan(gitAddPos);
-    // exit 0 must be after file check
-    expect(section.indexOf("exit 0")).toBeGreaterThan(-1);
+    // All three must exist
+    expect(fileCheckPos).toBeGreaterThanOrEqual(0);
+    expect(exitPos).toBeGreaterThan(fileCheckPos);
+    expect(gitAddPos).toBeGreaterThan(exitPos);
+    // Strict ordering: file check → exit 0 → git add
+    expect(fileCheckPos).toBeLessThan(exitPos);
+    expect(exitPos).toBeLessThan(gitAddPos);
   });
 });
 
