@@ -42,7 +42,7 @@ interface LobstersApiStory {
   comments_url: string;
   score: number;
   comment_count: number;
-  submitter_user: { username: string };
+  submitter_user: string;
   created_at: string;
   tags: string[];
 }
@@ -81,7 +81,7 @@ export async function fetchLobstersData(since?: string): Promise<LobstersData> {
                 commentsUrl: s.comments_url,
                 score: s.score,
                 commentCount: s.comment_count,
-                author: s.submitter_user.username,
+                author: s.submitter_user,
                 publishedAt: s.created_at,
                 tags: s.tags,
               });

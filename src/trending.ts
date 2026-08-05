@@ -24,6 +24,8 @@ export interface SearchRepo {
   pushedAt: string;
   url: string;
   searchQuery: string;
+  /** GitHub topics, when the API response includes them. */
+  topics?: string[];
 }
 
 export interface TrendingData {
@@ -40,6 +42,8 @@ export interface TrendingSnapshot {
   trendingNames: string[];
   /** fullName → totalStars from the previous snapshot. */
   starCounts: Record<string, number>;
+  /** Focus-search projects already surfaced in a previous report. */
+  searchNames?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -47,12 +51,13 @@ export interface TrendingSnapshot {
 // ---------------------------------------------------------------------------
 
 const SEARCH_QUERIES = [
-  { q: "topic:llm", label: "llm" },
-  { q: "topic:ai-agent", label: "ai-agent" },
   { q: "topic:rag", label: "rag" },
+  { q: "topic:graphrag", label: "graphrag" },
+  { q: "topic:agent-memory", label: "agent-memory" },
+  { q: "topic:context-engineering", label: "context-engineering" },
+  { q: "topic:llm-evaluation", label: "llm-evaluation" },
+  { q: "topic:mcp-server", label: "mcp-server" },
   { q: "topic:vector-database", label: "vector-db" },
-  { q: "topic:large-language-model", label: "llm-model" },
-  { q: "topic:machine-learning", label: "ml" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -145,6 +150,7 @@ interface SearchApiItem {
   stargazers_count: number;
   pushed_at: string;
   html_url: string;
+  topics?: string[];
 }
 
 interface SearchApiResponse {
@@ -185,6 +191,7 @@ async function searchAiRepos(sevenDaysAgo: string): Promise<SearchRepo[]> {
               pushedAt: item.pushed_at,
               url: item.html_url,
               searchQuery: label,
+              ...(item.topics && item.topics.length > 0 ? { topics: item.topics } : {}),
             });
             added++;
           }
@@ -203,6 +210,15 @@ async function searchAiRepos(sevenDaysAgo: string): Promise<SearchRepo[]> {
 // Export
 // ---------------------------------------------------------------------------
 
+export function filterSearchReposForSnapshot(
+  repos: SearchRepo[],
+  previousSnapshot?: TrendingSnapshot,
+): SearchRepo[] {
+  if (!previousSnapshot?.searchNames) return repos;
+  const previousNames = new Set(previousSnapshot.searchNames);
+  return repos.filter((repo) => !previousNames.has(repo.fullName));
+}
+
 export async function fetchTrendingData(previousSnapshot?: TrendingSnapshot): Promise<TrendingData> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
@@ -215,6 +231,7 @@ export async function fetchTrendingData(previousSnapshot?: TrendingSnapshot): Pr
   const newSnapshot: TrendingSnapshot = {
     trendingNames: allTrendingRepos.map((r) => r.fullName),
     starCounts: Object.fromEntries(allTrendingRepos.map((r) => [r.fullName, r.totalStars])),
+    searchNames: searchRepos.map((r) => r.fullName),
   };
 
   // Filter trending repos: only new entrants or significant star growth
@@ -230,5 +247,10 @@ export async function fetchTrendingData(previousSnapshot?: TrendingSnapshot): Pr
       })
     : allTrendingRepos;
 
-  return { trendingRepos, searchRepos, trendingFetchSuccess: success, snapshotMarkers: newSnapshot };
+  return {
+    trendingRepos,
+    searchRepos: filterSearchReposForSnapshot(searchRepos, previousSnapshot),
+    trendingFetchSuccess: success,
+    snapshotMarkers: newSnapshot,
+  };
 }

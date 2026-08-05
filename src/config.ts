@@ -29,10 +29,14 @@ export interface PersonalReportConfig {
   fiveMinuteLimit: number;
   /** Max events in the full report (normal target and upper bound). */
   fullReportLimit: number;
+  /** Minimum events before triggering a recovery pass (not a hard floor for low-info days). */
+  fullReportMinimum: number;
   overviewLimit: number;
   detailLimit: number;
   commercialMode: "exceptional_only" | "always" | "never";
   unknownProjectContext: boolean;
+  /** Max GitHub Search "首次项目发现" entries in the full report (0 = disabled). */
+  maxProjectDiscoveries: number;
 }
 
 const DEFAULT_PERSONAL_CONFIG: PersonalReportConfig = {
@@ -77,10 +81,12 @@ const DEFAULT_PERSONAL_CONFIG: PersonalReportConfig = {
   modelBackend: "mimo",
   fiveMinuteLimit: 6,
   fullReportLimit: 16,
+  fullReportMinimum: 12,
   overviewLimit: 8,
   detailLimit: 20,
   commercialMode: "exceptional_only",
   unknownProjectContext: true,
+  maxProjectDiscoveries: 2,
 };
 
 // ---------------------------------------------------------------------------
@@ -106,10 +112,12 @@ interface RawPersonalReport {
   model_backend?: string;
   five_minute_limit?: number;
   full_report_limit?: number;
+  full_report_minimum?: number;
   overview_limit?: number;
   detail_limit?: number;
   commercial_mode?: string;
   unknown_project_context?: boolean;
+  max_project_discoveries?: number;
 }
 
 interface RawConfig {
@@ -181,6 +189,15 @@ function parsePersonalReport(raw?: RawPersonalReport): PersonalReportConfig {
   const isValidMode = (v: unknown): v is PersonalReportConfig["commercialMode"] =>
     v === "exceptional_only" || v === "always" || v === "never";
 
+  const fullReportLimit =
+    typeof raw.full_report_limit === "number" && raw.full_report_limit > 0
+      ? raw.full_report_limit
+      : DEFAULT_PERSONAL_CONFIG.fullReportLimit;
+  const rawMinimum =
+    typeof raw.full_report_minimum === "number" && raw.full_report_minimum >= 1
+      ? raw.full_report_minimum
+      : DEFAULT_PERSONAL_CONFIG.fullReportMinimum;
+
   return {
     primaryTools:
       Array.isArray(raw.primary_tools) && raw.primary_tools.length > 0
@@ -222,10 +239,8 @@ function parsePersonalReport(raw?: RawPersonalReport): PersonalReportConfig {
       typeof raw.five_minute_limit === "number" && raw.five_minute_limit > 0
         ? raw.five_minute_limit
         : DEFAULT_PERSONAL_CONFIG.fiveMinuteLimit,
-    fullReportLimit:
-      typeof raw.full_report_limit === "number" && raw.full_report_limit > 0
-        ? raw.full_report_limit
-        : DEFAULT_PERSONAL_CONFIG.fullReportLimit,
+    fullReportLimit,
+    fullReportMinimum: Math.min(rawMinimum, fullReportLimit),
     overviewLimit:
       typeof raw.overview_limit === "number" && raw.overview_limit > 0
         ? raw.overview_limit
@@ -241,6 +256,10 @@ function parsePersonalReport(raw?: RawPersonalReport): PersonalReportConfig {
       typeof raw.unknown_project_context === "boolean"
         ? raw.unknown_project_context
         : DEFAULT_PERSONAL_CONFIG.unknownProjectContext,
+    maxProjectDiscoveries:
+      typeof raw.max_project_discoveries === "number" && raw.max_project_discoveries >= 0
+        ? raw.max_project_discoveries
+        : DEFAULT_PERSONAL_CONFIG.maxProjectDiscoveries,
   };
 }
 
