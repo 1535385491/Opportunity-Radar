@@ -1,0 +1,30 @@
+{
+  "summary": "Claude Code v2.1.222 修复工作区隔离会话的破坏性命令及钩子绕过漏洞：Claude Code v2.1.222 版本发布，修复了两个关键安全漏洞：工作区隔离失效可能执行破坏性 git 命令，以及 PreToolUse 钩子可以绕过工具限制。",
+  "signals": [
+    {
+      "title": "Claude Code v2.1.222 修复工作区隔离会话的破坏性命令及钩子绕过漏洞",
+      "description": "立即将您的 Claude Code 工具升级至 v2.1.222 或更新版本。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "论文 PAST-Bench：基准测试个人代理中递归自我改进的基础",
+      "description": "阅读论文全文，了解其评测维度、构建方法及基准结果，思考如何将这些评测思路应用到您自己的项目评估中。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "论文 WorldCup Arena：在实时锦标赛中对前沿 LLM 进行前瞻性、防泄漏的评估",
+      "description": "了解此评测方法论的核心思想。对于您日常的模型应用，无需立即行动，但可作为理解模型真实能力边界的参考资料。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Graphify：将代码库转化为可查询知识图谱的工具，支持 Claude Code/Codex 等",
+      "description": "访问其 GitHub 仓库，查阅文档和示例，评估其是否适用于您当前的项目结构和工作流。考虑在本地环境中试用。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "RAGFlow：融合 Agent 能力的 RAG 引擎，用于为 LLM 创建上下文层",
+      "description": "在需要构建或升级 RAG 系统时，将 RAGFlow 作为候选技术方案进行调研。访问其 GitHub 仓库了解架构和特性。",
+      "report": "ai-personal"
+    }
+  ]
+}
