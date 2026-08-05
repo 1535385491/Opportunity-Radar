@@ -109,6 +109,8 @@ personal_report:
   uses_anthropic_subscription: false
   five_minute_limit: 6
   full_report_limit: 16
+  full_report_minimum: 12
+  max_project_discoveries: 2
   focus_topics:
     - "Codex、Claude Code 客户端的重大能力、可靠性和工作流变化"
     - "RAG 与实际项目知识库"

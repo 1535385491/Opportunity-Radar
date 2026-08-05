@@ -96,6 +96,37 @@ export interface FilterResult {
   excluded: Array<{ id: string; reason: string }>;
 }
 
+export interface SelectionAudit {
+  candidateCount: number;
+  sourceCounts: Record<string, number>;
+  decisionCounts: { kept: number; excluded: number; unclassified: number };
+  candidates: Array<{
+    candidateId: number;
+    title: string;
+    subject: string;
+    sourceName: string;
+    sourceUrl: string;
+    eventTime: string;
+    infoType: InfoType;
+    decision: "kept" | "excluded" | "unclassified";
+    reason: string;
+    topic?: string;
+    confidence?: FilterResultItem["confidence"];
+  }>;
+}
+
+/** Recovery metadata merged into the selection audit JSON. */
+export interface RecoveryAuditData {
+  initialKeptCount: number;
+  minimumTarget: number;
+  recoveryTriggered: boolean;
+  recoveryCandidateCount: number;
+  recoveryAddedCount: number;
+  finalKeptCount: number;
+  underfilled: boolean;
+  recoveryFailureReason?: string;
+}
+
 export interface ReportEvent {
   /** Stable ID assigned by Stage 1 filter, binding this event to its source candidates. */
   filterEventId?: string;
@@ -122,6 +153,8 @@ export interface ReportEvent {
   candidateIds: string[];
   sources: Array<{ name: string; url: string }>;
   projectContext?: string;
+  /** Deterministic flag: this event is a first-time project discovery, not a daily update. */
+  isProjectDiscovery?: boolean;
 }
 
 export interface TopicGroup {
@@ -239,6 +272,7 @@ export const CATEGORY_LIMITS = {
   codex: 8,
   claudeCode: 8,
   otherCli: 6,
+  claw: 0,
   webOpenai: 4,
   webAnthropic: 4,
   hn: 5,
@@ -246,6 +280,7 @@ export const CATEGORY_LIMITS = {
   hf: 3,
   ph: 3,
   trending: 3,
+  focusSearch: 12,
   community: 3,
   skills: 3,
 } as const;
@@ -291,19 +326,25 @@ function extractGitHubItemCandidates(
     title: `#${item.number} ${item.title}`,
     subject: cfg.name,
     summary: truncate(item.body ?? "", 300),
-    eventTime: item.updated_at ?? item.created_at ?? "",
-    timeEvidence: "git-commit" as TimeEvidence,
+    eventTime: item.created_at,
+    timeEvidence: "api-date" as TimeEvidence,
     sourceName: "GitHub",
     sourceUrl: item.html_url,
     infoType,
     officialConfirmed: false,
     relevanceDimensions: [],
-    rawSummary: `State: ${item.state}, Comments: ${item.comments}, 👍: ${item.reactions?.["+1"] ?? 0}`,
+    rawSummary:
+      `State: ${item.state}, Comments: ${item.comments}, 👍: ${item.reactions?.["+1"] ?? 0}, ` +
+      `Created: ${item.created_at}, Updated: ${item.updated_at}`,
   }));
 }
 
 function extractReleaseCandidates(releases: GitHubRelease[], cfg: RepoConfig): CandidateItem[] {
-  return releases.map((r) => ({
+  const isStableRelease = (release: GitHubRelease): boolean => {
+    const text = `${release.tag_name} ${release.name}`;
+    return !/(?:^|[\s._-])(nightly|alpha|beta|rc|canary|dev)(?:[\s._-]|$)/i.test(text);
+  };
+  return releases.filter(isStableRelease).map((r) => ({
     id: `release::${cfg.repo}::${r.tag_name}`,
     title: `${cfg.name} ${r.tag_name}`,
     subject: cfg.name,
@@ -327,21 +368,20 @@ export function extractRepoCandidates(
   const isPrimary = config.primaryTools.includes(fetch.cfg.id);
   const limit = isPrimary ? 8 : Math.min(maxItems, 5);
 
-  const issues = extractGitHubItemCandidates(fetch.issues, fetch.cfg, "issue");
-  const prs = extractGitHubItemCandidates(fetch.prs, fetch.cfg, "pr");
+  const hasIndependentSignal = (item: GitHubItem): boolean =>
+    item.comments >= 3 || (item.reactions?.["+1"] ?? 0) >= 3;
+  const issues = extractGitHubItemCandidates(fetch.issues.filter(hasIndependentSignal), fetch.cfg, "issue");
+  const prs = extractGitHubItemCandidates(fetch.prs.filter(hasIndependentSignal), fetch.cfg, "pr");
   const releases = extractReleaseCandidates(fetch.releases, fetch.cfg);
 
   const all = sortByTime([...releases, ...issues, ...prs]);
 
-  // For primary tools, take more; for others, only high-engagement items
+  // Primary tools get a larger cap, but a newly filed issue alone is not yet a
+  // personal-impact signal. Releases remain eligible without engagement.
   if (isPrimary) {
     return all.slice(0, limit);
   }
-  // Secondary tools: prioritize releases and high-engagement items
-  const highEngagement = all.filter(
-    (c) => c.infoType === "release" || (c.rawSummary.includes("👍: ") && !c.rawSummary.includes("👍: 0")),
-  );
-  return (highEngagement.length > 0 ? highEngagement : all).slice(0, limit);
+  return all.slice(0, limit);
 }
 
 // ---------------------------------------------------------------------------
@@ -399,24 +439,34 @@ export function extractWebCandidates(results: WebFetchResult[], maxItems = 5): C
 // ---------------------------------------------------------------------------
 
 export function extractTrendingCandidates(data: TrendingData, maxItems = 5): CandidateItem[] {
-  // trendingRepos are already filtered by the snapshot comparison in trending.ts
-  const fromTrending = data.trendingRepos.map((r) => ({
-    id: r.url,
-    title: r.fullName,
-    subject: r.fullName.split("/")[0] ?? r.fullName,
-    summary: r.description || "No description",
-    eventTime: new Date().toISOString(),
-    timeEvidence: "snapshot" as TimeEvidence,
-    sourceName: "GitHub Trending",
-    sourceUrl: r.url,
-    infoType: "trend" as InfoType,
-    officialConfirmed: false,
-    relevanceDimensions: [],
-    rawSummary: `Language: ${r.language}, Stars: ${r.totalStars.toLocaleString()}, Today: +${r.todayStars}`,
-  }));
+  // Activity-only Trending rankings are intentionally excluded from the personal
+  // report. They measure popularity, while topic searches can surface concrete
+  // projects relevant to RAG, memory, agents, evaluation, and similar work.
+  const grouped = new Map<string, TrendingData["searchRepos"]>();
+  for (const repo of data.searchRepos) {
+    const group = grouped.get(repo.searchQuery) ?? [];
+    group.push(repo);
+    grouped.set(repo.searchQuery, group);
+  }
 
-  // Search repos are not snapshot-filtered; take top by stars
-  const fromSearch = data.searchRepos.slice(0, 3).map((r) => ({
+  const diverseSearchRepos: TrendingData["searchRepos"] = [];
+  // GitHub Search already returns each query in relevance/star ranking order.
+  // Preserve that ranking rather than turning recent push activity into the
+  // selection signal again.
+  const queues = [...grouped.values()];
+  for (let index = 0; diverseSearchRepos.length < maxItems; index++) {
+    let added = false;
+    for (const queue of queues) {
+      const repo = queue[index];
+      if (!repo) continue;
+      diverseSearchRepos.push(repo);
+      added = true;
+      if (diverseSearchRepos.length >= maxItems) break;
+    }
+    if (!added) break;
+  }
+
+  return diverseSearchRepos.map((r) => ({
     id: r.url,
     title: r.fullName,
     subject: r.fullName.split("/")[0] ?? r.fullName,
@@ -425,13 +475,13 @@ export function extractTrendingCandidates(data: TrendingData, maxItems = 5): Can
     timeEvidence: "api-date" as TimeEvidence,
     sourceName: `GitHub Search (${r.searchQuery})`,
     sourceUrl: r.url,
-    infoType: "trend" as InfoType,
+    infoType: "product" as InfoType,
     officialConfirmed: false,
     relevanceDimensions: [],
-    rawSummary: `Stars: ${r.stargazersCount.toLocaleString()}, Query: ${r.searchQuery}`,
+    rawSummary:
+      `First-time focus-topic discovery; Query: ${r.searchQuery}; Language: ${r.language ?? "unknown"}; Description: ${r.description ?? ""}` +
+      (r.topics && r.topics.length > 0 ? `; Topics: ${r.topics.join(", ")}` : ""),
   }));
-
-  return sortByTime([...fromTrending, ...fromSearch]).slice(0, maxItems);
 }
 
 // ---------------------------------------------------------------------------
@@ -481,7 +531,35 @@ export function extractPhCandidates(data: PhData, maxItems = 3): CandidateItem[]
 // ---------------------------------------------------------------------------
 
 export function extractArxivCandidates(data: ArxivData, maxItems = 5): CandidateItem[] {
-  return data.papers.slice(0, maxItems).map((p) => ({
+  const focusKeywords = [
+    "retrieval-augmented",
+    "retrieval augmented",
+    "rag",
+    "knowledge base",
+    "knowledge graph",
+    "graphrag",
+    "long-term memory",
+    "long term memory",
+    "persistent memory",
+    "agent memory",
+    "context engineering",
+    "agent workflow",
+    "tool calling",
+    "evaluation",
+    "observability",
+    "multimodal",
+    "time series",
+    "diagnosis",
+  ];
+  const score = (paper: ArxivData["papers"][number]): number => {
+    const text = `${paper.title} ${paper.summary}`.toLowerCase();
+    return focusKeywords.reduce((total, keyword) => total + (text.includes(keyword) ? 1 : 0), 0);
+  };
+  const papers = [...data.papers]
+    .sort((a, b) => score(b) - score(a) || b.published.localeCompare(a.published))
+    .slice(0, maxItems);
+
+  return papers.map((p) => ({
     id: p.url,
     title: p.title,
     subject: p.authors.slice(0, 3).join(", "),
@@ -548,17 +626,15 @@ function categorizeSource(c: CandidateItem, primaryTools: string[]): string {
   const src = c.sourceName.toLowerCase();
   const subj = c.subject.toLowerCase();
 
+  if (subj.includes("claw")) return "claw";
   if (src === "hacker news") return "hn";
   if (src === "arxiv") return "arxiv";
   if (src === "hugging face") return "hf";
   if (src === "product hunt") return "ph";
   if (src === "dev.to" || src === "lobste.rs") return "community";
-  if (src.includes("trending") || src.includes("search")) return "trending";
+  if (src.includes("search")) return "focusSearch";
+  if (src.includes("trending")) return "trending";
   if (src.includes("anthropic") && src.includes("skills")) return "skills";
-
-  // Web sources
-  if (subj.includes("openai") || src.includes("openai")) return "webOpenai";
-  if (subj.includes("anthropic") || subj.includes("claude")) return "webAnthropic";
 
   // GitHub repos — classify by primary tool
   for (const tool of primaryTools) {
@@ -567,7 +643,57 @@ function categorizeSource(c: CandidateItem, primaryTools: string[]): string {
       return "claudeCode";
   }
 
+  // Web sources
+  if (subj.includes("openai") || src.includes("openai")) return "webOpenai";
+  if (subj.includes("anthropic") || subj.includes("claude")) return "webAnthropic";
+
   return "otherCli";
+}
+
+function assertCandidateContract(c: CandidateItem): void {
+  for (const field of ["sourceName", "subject"] as const) {
+    if (typeof c[field] !== "string" || !c[field].trim()) {
+      throw new Error(`Invalid candidate ${c.id}: missing ${field} (${c.sourceUrl})`);
+    }
+  }
+}
+
+function isCandidateApplicable(c: CandidateItem, config: PersonalReportConfig): boolean {
+  if (c.infoType === "issue" || c.infoType === "pr") return false;
+
+  const text = `${c.title} ${c.summary} ${c.rawSummary}`.toLowerCase();
+  const publisher = `${c.sourceName} ${c.subject}`.toLowerCase();
+  const backend = config.modelBackend.toLowerCase();
+  if (
+    /(?:\b(?:price|pricing|cost)\b|价格|成本)/i.test(text) &&
+    (publisher.includes("openai") || publisher.includes("anthropic")) &&
+    !publisher.includes(backend)
+  ) {
+    return false;
+  }
+
+  // Non-primary AI CLI ordinary releases (match by canonical tool name)
+  const primarySet = new Set(config.primaryTools.map((t) => t.toLowerCase()));
+  const nonPrimaryCliNames = [
+    "qwen-code",
+    "copilot-cli",
+    "gemini-cli",
+    "opencode",
+    "kimi-cli",
+    "deepseek-tui",
+  ];
+  const subjectNorm = c.subject.toLowerCase().replace(/\s+/g, "-");
+  const isPiCli = subjectNorm === "pi" || subjectNorm === "pi-cli";
+  const isNonPrimaryCli =
+    (isPiCli || nonPrimaryCliNames.some((name) => subjectNorm.includes(name))) &&
+    !primarySet.has(subjectNorm);
+  if (isNonPrimaryCli && c.infoType === "release") return false;
+
+  if (config.usesAnthropicAccount || config.usesAnthropicSubscription) return true;
+
+  const anthropicModelOnly =
+    /\b(opus(?:\s*\d+(?:\.\d+)?)?|sonnet|haiku|claude\.ai|anthropic api|claude api)\b/i;
+  return !anthropicModelOnly.test(text);
 }
 
 /**
@@ -584,6 +710,8 @@ export function buildBalancedPool(
   // Group by category
   const groups = new Map<string, CandidateItem[]>();
   for (const c of candidates) {
+    assertCandidateContract(c);
+    if (!isCandidateApplicable(c, config)) continue;
     const cat = categorizeSource(c, config.primaryTools);
     if (!groups.has(cat)) groups.set(cat, []);
     groups.get(cat)!.push(c);
@@ -642,6 +770,72 @@ export function mergeCandidates(candidates: CandidateItem[]): MergedCandidate[] 
   return [...byKey.values()];
 }
 
+export function filterCandidatesByCoverage(
+  candidates: MergedCandidate[],
+  coverageFrom: string,
+  coverageTo: string,
+): MergedCandidate[] {
+  const fromMs = Date.parse(coverageFrom);
+  const toMs = Date.parse(coverageTo);
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || fromMs > toMs) {
+    throw new Error(`Invalid coverage window: ${coverageFrom} .. ${coverageTo}`);
+  }
+
+  return candidates.filter((candidate) => {
+    const eventMs = Date.parse(candidate.eventTime);
+    return Number.isFinite(eventMs) && eventMs >= fromMs && eventMs <= toMs;
+  });
+}
+
+export function buildSelectionAudit(
+  candidates: MergedCandidate[],
+  filterResult: FilterResult,
+): SelectionAudit {
+  const keptById = new Map<string, FilterResultItem>();
+  for (const item of filterResult.kept) {
+    for (const rawId of [...item.keepIds, ...(item.mergedIds ?? [])]) {
+      const id = normalizeCandidateId(rawId);
+      if (id) keptById.set(id, item);
+    }
+  }
+  const excludedById = new Map<string, string>();
+  for (const item of filterResult.excluded ?? []) {
+    const id = normalizeCandidateId(item.id);
+    if (id) excludedById.set(id, item.reason);
+  }
+
+  const sourceCounts: Record<string, number> = {};
+  const decisionCounts = { kept: 0, excluded: 0, unclassified: 0 };
+  const audited = candidates.map((candidate, index) => {
+    sourceCounts[candidate.sourceName] = (sourceCounts[candidate.sourceName] ?? 0) + 1;
+    const candidateId = index + 1;
+    const id = String(candidateId);
+    const kept = keptById.get(id);
+    const excludedReason = excludedById.get(id);
+    const decision: "kept" | "excluded" | "unclassified" = kept
+      ? "kept"
+      : excludedReason
+        ? "excluded"
+        : "unclassified";
+    decisionCounts[decision]++;
+
+    return {
+      candidateId,
+      title: candidate.title,
+      subject: candidate.subject,
+      sourceName: candidate.sourceName,
+      sourceUrl: candidate.sourceUrl,
+      eventTime: candidate.eventTime,
+      infoType: candidate.infoType,
+      decision,
+      reason: kept?.reason ?? excludedReason ?? "Stage 1 did not classify this candidate",
+      ...(kept ? { topic: kept.topic, confidence: kept.confidence } : {}),
+    };
+  });
+
+  return { candidateCount: candidates.length, sourceCounts, decisionCounts, candidates: audited };
+}
+
 /**
  * Normalize URL for dedup: strip trailing slashes, fragments, common query params.
  */
@@ -670,6 +864,26 @@ export function selectFinalItems(merged: MergedCandidate[], limit: number): Merg
 // ---------------------------------------------------------------------------
 
 const FILTER_TOKENS = 6144;
+export const REPORT_TOKENS = 16384;
+const COMPLETION_TOKENS = 4096;
+
+type LlmCaller = (prompt: string, maxTokens: number) => Promise<string>;
+
+export async function callLlmJsonWithRepair<T>(
+  prompt: string,
+  maxTokens: number,
+  caller: LlmCaller = callLlm,
+): Promise<T> {
+  const raw = await caller(prompt, maxTokens);
+  try {
+    return parseLlmJson<T>(raw);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    console.error("  [personal] Invalid LLM JSON — requesting one format-only repair.");
+    const repairPrompt = `下面的模型输出不是合法 JSON。只修复 JSON 语法和转义，完整保留原始对象的字段、数组、顺序和值；不要重新生成内容，不增删事实，不添加解释或 Markdown。先在内部逐字符检查引号、逗号、括号和转义，最终只输出一个可被 JSON.parse 解析的完整 JSON。\n\n原始输出：\n${raw}`;
+    return parseLlmJson<T>(await caller(repairPrompt, maxTokens));
+  }
+}
 
 /**
  * Builds the LLM prompt for Stage 1: filtering, relevance judgment,
@@ -687,7 +901,7 @@ export function buildFilterPrompt(
         `[${i + 1}] ${c.title} (${c.subject})\n` +
         `  Summary: ${c.summary}\n` +
         `  Type: ${c.infoType}, Time: ${c.eventTime}, Official: ${c.officialConfirmed}\n` +
-        `  Source: ${c.sourceName} — ${c.sourceUrl}\n` +
+        `  Source: ${c.sourceName} - ${c.sourceUrl}\n` +
         (c.additionalSources.length > 0 ? `  Also found at: ${c.additionalSources.join(", ")}\n` : "") +
         `  Raw: ${c.rawSummary}`,
     )
@@ -750,6 +964,9 @@ ${candidateBlock}
 - 对当前项目有明确工程参考价值；或
 - 提供可以验证、试用、迁移或实施的方法；或
 - 会影响后续技术选择和架构决策
+- 候选质量足够时，优先形成 12～16 条完整报告条目；不得把五分钟概览的门槛套用到完整报告
+- RAG、长期记忆、Context Engineering、Agent 工作流、评测与可观测性等可落地工程经验，即使不要求立即行动，也可以进入完整报告
+- GitHub Search 候选是经过快照去重的首次项目发现，不是活跃度榜；若描述给出了与用户方向直接相关的具体能力，可作为”值得评估的项目”进入完整报告（最多 ${config.maxProjectDiscoveries} 条）；首次项目发现始终不得进入五分钟概览
 
 ## 筛选规则
 
@@ -759,7 +976,7 @@ ${candidateBlock}
 4. 纯 UI、项目自身 CI、治理争议、市场定位、常规 Claw 动态淘汰。
 5. Slack 等用户不使用的场景，除非体现了可迁移到用户工作流的重大能力，否则淘汰。
 6. 同一发布在官网、GitHub、HN、社区出现时合并成一个事件，keepIds 保留所有相关候选编号。
-7. 不设置最低数量。宁缺毋滥。
+7. 有足够高价值信息时，完整报告通常为 ${config.fullReportMinimum}～${config.fullReportLimit} 条；信息不足时可以更少；不得用普通非主力工具版本、泛讨论、观点文章或静态项目介绍填数。
 8. 最多保留 ${config.fullReportLimit} 个事件，按价值从高到低排列。
 9. 确信度为 low 且无事实支撑的条目应排除。
 10. 排除维度中的内容不要纳入。
@@ -770,6 +987,9 @@ ${candidateBlock}
 ## 明确排除或降级
 
 - ${config.usesAnthropicSubscription ? "" : "Anthropic Claude 模型/账号/订阅/价格变化 → 直接排除（用户不使用）"}
+- ${config.usesAnthropicAccount || config.usesAnthropicSubscription ? "" : "依赖 Anthropic 账号或订阅、claude.ai Web/移动端登录才能使用的功能 → 直接排除"}
+- 用户未明确确认使用 Remote Control、本地代理或特定高级功能时，不得以“可能使用”“可能受影响”为理由收录
+- 尚未交付的功能请求、零证据体验建议、没有当前行动的 Issue → 排除
 - AI CLI 活跃度、Star、热度、成熟度和普通横向排行榜 → 排除
 - 普通 Claw 项目动态 → 排除
 - 普通 OpenCode、Gemini CLI 等非主力工具的普通版本动态 → 排除
@@ -784,7 +1004,132 @@ ${candidateBlock}
 - 非主力工具只有出现可迁移到 Codex、Claude Code 或当前项目的重大能力时才收录。
 - 排行榜只有在评测方法可靠、与 ${config.modelBackend} 或当前模型选择直接相关，并且会改变实际决策时才允许收录。
 - Windows Bug 修复只有在用户实际可能受影响，或者升级会改变当前行动时进入概览；否则降级到工具状态或删除。
-- 陌生项目必须说明"它是什么、解决什么问题、为什么与用户有关"，否则排除。`;
+- 陌生项目设置 needsContext 为 true，由 Stage 2 补充背景说明，不能仅仅因为用户还没听说过就排除。必须说明"它是什么、解决什么问题、为什么与用户有关"。`;
+}
+
+/**
+ * Builds the LLM prompt for the recovery pass: re-evaluate excluded candidates
+ * when Stage 1 output is underfilled.
+ */
+export function buildRecoveryPrompt(
+  stage1Kept: FilterResultItem[],
+  excluded: Array<{ id: string; reason: string }>,
+  candidates: MergedCandidate[],
+  config: PersonalReportConfig,
+  coverageFrom: string,
+  coverageTo: string,
+): string {
+  const keptSummary = stage1Kept.map((k, i) => String(i + 1) + ". " + k.title + " - " + k.reason).join("\n");
+
+  const excludedBlock = excluded
+    .map((ex) => {
+      const idx = Number(ex.id) - 1;
+      const c = candidates[idx];
+      if (!c) return "[" + ex.id + "] (invalid)";
+      return (
+        "[" +
+        ex.id +
+        "] " +
+        c.title +
+        " (" +
+        c.subject +
+        ")\n" +
+        "  Summary: " +
+        c.summary +
+        "\n" +
+        "  Type: " +
+        c.infoType +
+        ", Time: " +
+        c.eventTime +
+        "\n" +
+        "  Source: " +
+        c.sourceName +
+        " - " +
+        c.sourceUrl +
+        "\n" +
+        "  Raw: " +
+        c.rawSummary +
+        "\n" +
+        "  Stage 1 排除理由: " +
+        ex.reason
+      );
+    })
+    .join("\n\n");
+
+  const lines: string[] = [];
+  lines.push(
+    "你是个人情报恢复筛选分析师。第一轮筛选保留了 " +
+      stage1Kept.length +
+      " 条事件，低于目标最低 " +
+      config.fullReportMinimum +
+      " 条。",
+  );
+  lines.push("请从以下被排除的候选中重新评估，找出可以补充进入完整报告的新增事件。");
+  lines.push("");
+  lines.push("## 已保留的事件");
+  lines.push(keptSummary);
+  lines.push("");
+  lines.push("## 被排除的候选（原始编号）");
+  lines.push(excludedBlock);
+  lines.push("");
+  lines.push("## 用户画像");
+  lines.push("- 主力工具：" + config.primaryTools.join("、"));
+  lines.push("- 平台：" + config.platforms.join("、"));
+  lines.push("- 使用场景：" + config.usageContext);
+  lines.push("- 高优先级关注方向：" + config.focusTopics.join("、"));
+  lines.push("- 一般关注方向：" + config.secondaryTopics.join("、"));
+  lines.push("- 排除维度：" + config.excludedTopics.join("、"));
+  lines.push("- 实际模型后端：" + config.modelBackend);
+  lines.push("");
+  lines.push("## 覆盖时间");
+  lines.push(coverageFrom + " ～ " + coverageTo);
+  lines.push("");
+  lines.push("## 可以重新考虑的项目");
+  lines.push("");
+  lines.push(
+    "- GitHub Search 发现的 RAG、记忆、Context Engineering、Agent 工作流、评测、可观测性、代码知识库等项目",
+  );
+  lines.push("- 具有具体工程能力，但第一次因“陌生”“描述不够充分”而被排除的项目");
+  lines.push("- 适合放在完整报告、但不够重要进入五分钟概览的事件");
+  lines.push(
+    "- RAG、长期记忆、Context Engineering、Agent 工作流、评测/可观测性、代码知识图谱、状态数据库等可落地项目",
+  );
+  lines.push("");
+  lines.push("## 硬排除（即使 recovery 也不得纳入）");
+  lines.push("");
+  lines.push("- Anthropic Claude 模型、账号、订阅和价格");
+  lines.push("- 普通 Claw 项目动态");
+  lines.push("- AI CLI 活跃度、Star、热度和普通排行榜");
+  lines.push("- 无事实证据的投诉");
+  lines.push("- 公司战略、治理争议、纯 UI、CI 和贡献流程");
+  lines.push("- 与用户工作流无关的市场或消费信息");
+  lines.push("");
+  lines.push("## 输出要求");
+  lines.push("");
+  lines.push("请输出严格的 JSON（不要包含 markdown 代码块标记），结构如下：");
+  lines.push("");
+  lines.push("{");
+  lines.push('  "kept": [');
+  lines.push("    {");
+  lines.push('      "title": "事件标题",');
+  lines.push('      "keepIds": [候选编号],');
+  lines.push('      "mergedIds": [],');
+  lines.push('      "topic": "主题名",');
+  lines.push('      "relevance": "与用户的相关维度说明",');
+  lines.push('      "confidence": "medium 或 high",');
+  lines.push('      "reason": "保留理由",');
+  lines.push('      "needsContext": false');
+  lines.push("    }");
+  lines.push("  ],");
+  lines.push('  "excluded": []');
+  lines.push("}");
+  lines.push("");
+  lines.push("注意：");
+  lines.push("- keepIds 中的编号必须来自上面“被排除的候选”列表");
+  lines.push("- 不要重新选择已经保留的事件");
+  lines.push("- 不要为了凑数纳入低价值内容");
+  lines.push("- 宁可返回少量高质量补充，也不纳入可疑内容");
+  return lines.join("\n");
 }
 
 /**
@@ -801,11 +1146,475 @@ export function capFilterResult(filterResult: FilterResult, limit: number): Filt
 }
 
 /**
+ * Check if a candidate is hard-excluded and must never enter any report layer.
+ */
+export function isHardExcluded(c: MergedCandidate, config: PersonalReportConfig): boolean {
+  const text = (c.title + " " + c.summary + " " + c.rawSummary).toLowerCase();
+  const publisher = (c.sourceName + " " + c.subject).toLowerCase();
+  const backend = config.modelBackend.toLowerCase();
+
+  // Pricing / cost for non-user backends
+  if (
+    /(?:\b(?:price|pricing|cost)\b|价格|成本)/i.test(text) &&
+    (publisher.includes("openai") || publisher.includes("anthropic")) &&
+    !publisher.includes(backend)
+  ) {
+    return true;
+  }
+  if (c.subject.toLowerCase().includes("claw")) return true;
+  if (/(?:活跃度|排行榜|star\s*count|maturity)/i.test(text)) return true;
+  if (/(?:公司战略|市场定位|社区治理)/i.test(text)) return true;
+  if (/(?:纯\s*UI|CI\s*流程|贡献流程)/i.test(text)) return true;
+
+  // Anthropic Claude model/service/API/security events when user doesn't use Anthropic
+  if (!config.usesAnthropicAccount && !config.usesAnthropicSubscription) {
+    const isAnthropicClaudeContent =
+      /\banthropic\b.*\bclaude\b/i.test(text) ||
+      /\bclaude\b.*\banthropic\b/i.test(text) ||
+      /\bclaude\b.*(?:安全|security|评估|eval|incident|调查)/i.test(text) ||
+      /(?:安全|security|评估|eval|incident|调查).*\bclaude\b/i.test(text) ||
+      (publisher.includes("anthropic") && /\b(?:claude|模型|model|安全|security|评估|eval)\b/i.test(text));
+    if (isAnthropicClaudeContent) return true;
+  }
+
+  // Non-primary AI CLI ordinary releases (match by canonical tool name)
+  const primarySet2 = new Set(config.primaryTools.map((t) => t.toLowerCase()));
+  const nonPrimaryCliNames = [
+    "qwen-code",
+    "copilot-cli",
+    "gemini-cli",
+    "opencode",
+    "kimi-cli",
+    "deepseek-tui",
+  ];
+  const subjectNorm = c.subject.toLowerCase().replace(/\s+/g, "-");
+  const isPiCli = subjectNorm === "pi" || subjectNorm === "pi-cli";
+  const isNonPrimaryCli =
+    (isPiCli || nonPrimaryCliNames.some((name) => subjectNorm.includes(name))) &&
+    !primarySet2.has(subjectNorm);
+  if (isNonPrimaryCli && c.infoType === "release") return true;
+
+  // Generic product launches (Launch HN / Show HN)
+  if (isGenericProductLaunch(c)) return true;
+  // Speculative non-primary releases
+  if (isSpeculativeNonPrimaryRelease(c, config)) return true;
+
+  return false;
+}
+
+/**
+ * Check if a candidate is a GitHub Search "首次项目发现" (project discovery).
+ * These have sourceName containing "Search" and infoType "product".
+ */
+/** Get a stable, machine-readable reason code for a hard-excluded candidate. */
+/**
+ * Deterministically tag project discovery events in a report.
+ * Must be called after Stage 2 output and again after any completion merge.
+ */
+export function applyProjectDiscoveryTags(
+  json: Pick<PersonalReportJson, "events">,
+  discoveryFilterEventIds: Set<string>,
+): void {
+  for (const evt of json.events ?? []) {
+    if (evt.filterEventId && discoveryFilterEventIds.has(evt.filterEventId)) {
+      evt.isProjectDiscovery = true;
+    }
+  }
+}
+
+/**
+ * Check if a candidate is a generic product launch (Launch HN / Show HN / YC)
+ * without concrete engineering evidence.
+ */
+export function isGenericProductLaunch(c: CandidateItem): boolean {
+  const text = (c.title + " " + c.summary + " " + c.rawSummary).toLowerCase();
+  const isHnLaunch =
+    /\b(?:launch\s+hn|show\s+hn|yc\s+(?:w\d|s\d|f\d|sp\d))\b/i.test(text) ||
+    /\b(?:launch|show)\s+hn\b/i.test(c.title);
+  if (!isHnLaunch) return false;
+  // Has concrete engineering evidence → not generic
+  if (
+    /(?:github\.com|开源|open[- ]source|implementation|api|sdk|self[- ]hosted|docker|npm|pip|crate)/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Check if a non-primary tool release is speculative (only version/commit/PR/scale
+ * info without concrete capability changes relevant to user focus).
+ */
+export function isSpeculativeNonPrimaryRelease(c: MergedCandidate, config: PersonalReportConfig): boolean {
+  if (c.infoType !== "release") return false;
+  // Must be non-primary tool
+  const primarySet = new Set(config.primaryTools.map((t) => t.toLowerCase()));
+  const names = [
+    "qwen-code",
+    "copilot-cli",
+    "gemini-cli",
+    "opencode",
+    "kimi-cli",
+    "deepseek-tui",
+    "hermes-agent",
+    "nanobot",
+  ];
+  const norm = c.subject.toLowerCase().replace(/\s+/g, "-");
+  const isPi = norm === "pi" || norm === "pi-cli";
+  const isNonPrimary = (isPi || names.some((name) => norm.includes(name))) && !primarySet.has(norm);
+  if (!isNonPrimary) return false;
+  // Check if content only has generic release info
+  const text = (c.title + " " + c.summary + " " + c.rawSummary).toLowerCase();
+  const hasOnlyGenericInfo =
+    /(?:版本|version|v\d|release|发布|更新|重构|refactor|commits?|prs?|issues?|closed|merged|规模|large.scale|massive|huge)/i.test(
+      text,
+    );
+  const hasSpecificCapability =
+    /(?:持久化|persistent|状态数据库|state.database|评测指标|evaluation.metric|可观测|observab|MCP.*(?:权限|隔离|permission|isolation)|RAG.*(?:检索|retriev)|新增.*能力|新增.*功能|new.capability|new.feature)/i.test(
+      text,
+    );
+  return hasOnlyGenericInfo && !hasSpecificCapability;
+}
+
+function getHardExclusionReason(c: MergedCandidate, config: PersonalReportConfig): string {
+  const text = (c.title + " " + c.summary + " " + c.rawSummary).toLowerCase();
+  const publisher = (c.sourceName + " " + c.subject).toLowerCase();
+  const backend = config.modelBackend.toLowerCase();
+  if (
+    /(?:\b(?:price|pricing|cost)\b|价格|成本)/i.test(text) &&
+    (publisher.includes("openai") || publisher.includes("anthropic")) &&
+    !publisher.includes(backend)
+  ) {
+    return "hard-excluded-pricing";
+  }
+  if (c.subject.toLowerCase().includes("claw")) return "hard-excluded-claw";
+  if (/(?:活跃度|排行榜|star\s*count|maturity)/i.test(text)) return "hard-excluded-activity-ranking";
+  if (/(?:公司战略|市场定位|社区治理)/i.test(text)) return "hard-excluded-strategy";
+  if (/(?:纯\s*UI|CI\s*流程|贡献流程)/i.test(text)) return "hard-excluded-ci-ui";
+  if (!config.usesAnthropicAccount && !config.usesAnthropicSubscription) {
+    const isAnthropicClaude =
+      /\banthropic\b.*\bclaude\b/i.test(text) ||
+      /\bclaude\b.*\banthropic\b/i.test(text) ||
+      /\bclaude\b.*(?:安全|security|评估|eval|incident|调查)/i.test(text) ||
+      /(?:安全|security|评估|eval|incident|调查).*\bclaude\b/i.test(text) ||
+      (publisher.includes("anthropic") && /\b(?:claude|模型|model|安全|security|评估|eval)\b/i.test(text));
+    if (isAnthropicClaude) return "hard-excluded-anthropic-claude";
+  }
+  if (isNonPrimaryCliReleaseCandidate(c, config)) return "hard-excluded-non-primary-cli-release";
+  if (isGenericProductLaunch(c)) return "generic-product-launch";
+  if (isSpeculativeNonPrimaryRelease(c, config)) return "speculative-non-primary-release";
+  return "hard-excluded";
+}
+
+/** Check if a candidate is a non-primary CLI release (used by getHardExclusionReason). */
+function isNonPrimaryCliReleaseCandidate(c: MergedCandidate, config: PersonalReportConfig): boolean {
+  const primarySet = new Set(config.primaryTools.map((t) => t.toLowerCase()));
+  const names = ["qwen-code", "copilot-cli", "gemini-cli", "opencode", "kimi-cli", "deepseek-tui"];
+  const norm = c.subject.toLowerCase().replace(/\s+/g, "-");
+  const isPi = norm === "pi" || norm === "pi-cli";
+  return (
+    c.infoType === "release" && (isPi || names.some((name) => norm.includes(name))) && !primarySet.has(norm)
+  );
+}
+
+export function isProjectDiscovery(c: CandidateItem): boolean {
+  return c.sourceName.includes("Search") && c.infoType === "product";
+}
+
+/**
+ * Check if a candidate is generic discussion/opinion without concrete engineering content.
+ * Uses final URL/content, not just aggregator source name.
+ */
+export function isGenericDiscussion(c: CandidateItem): boolean {
+  const text = (c.title + " " + c.summary + " " + c.rawSummary).toLowerCase();
+  // Has concrete engineering evidence → not generic
+  if (
+    /(?:benchmark|reproducible|implementation|tutorial|how[- ]to|guide|evaluation|release|changelog|commit|pull.request|merge|fix|CVE|vulnerability|security.advisory|incident.report)/i.test(
+      text,
+    )
+  ) {
+    return false;
+  }
+  // Explicit opinion/discussion signals
+  const hasOpinionSignal =
+    /(?:观点|评论|轶事|opinion|commentary|anecdote|个人|blog|思考|反思|讨论|范式|paradigm|认知债务|cognitive.debt)/i.test(
+      text,
+    );
+  // Blog-style URL patterns
+  const isBlogUrl = /daringfireball\.net|medium\.com|substack\.com|dev\.to|lobste\.rs|personal|blog/i.test(
+    c.sourceUrl,
+  );
+  return hasOpinionSignal || (isBlogUrl && c.infoType !== "release" && c.infoType !== "paper");
+}
+
+/**
+ * Check if a candidate is low-value for recovery purposes.
+ * Used to prevent recovery from padding with low-quality content.
+ */
+export function isLowValueForRecovery(c: MergedCandidate, config: PersonalReportConfig): boolean {
+  if (isHardExcluded(c, config)) return true;
+  if (isProjectDiscovery(c)) return true;
+  if (isGenericDiscussion(c)) return true;
+  if (isGenericProductLaunch(c)) return true;
+  if (isSpeculativeNonPrimaryRelease(c, config)) return true;
+  return false;
+}
+
+/**
+ * Filter recovery events to only use candidate IDs from the allowed set.
+ * Entire events are discarded if they contain any disallowed ID.
+ * Returns the filtered kept array and the number of events added.
+ */
+export function filterRecoveryEvents(
+  recoveryKept: FilterResultItem[],
+  allowedIds: Set<string>,
+  initialClaimedIds: Set<string>,
+): FilterResultItem[] {
+  const valid: FilterResultItem[] = [];
+  // Mutable copy: grows as events are accepted to prevent intra-recovery duplicates
+  const claimed = new Set(initialClaimedIds);
+  for (const event of recoveryKept) {
+    const allIds = [...(event.keepIds ?? []), ...(event.mergedIds ?? [])];
+    let dominated = true;
+    for (const id of allIds) {
+      const normalized = normalizeCandidateId(id);
+      if (!normalized || !allowedIds.has(normalized) || claimed.has(normalized)) {
+        dominated = false;
+        break;
+      }
+    }
+    if (dominated && allIds.length > 0) {
+      // Accept: update claimed set with all IDs from this event
+      for (const id of allIds) {
+        const normalized = normalizeCandidateId(id);
+        if (normalized) claimed.add(normalized);
+      }
+      valid.push(event);
+    }
+  }
+  return valid;
+}
+
+export function normalizeFilterResultAssignments(
+  filterResult: FilterResult,
+  candidateCount: number,
+): FilterResult {
+  const claimed = new Set<string>();
+  const keepFirstAssignment = (ids: string[]): string[] => {
+    const result: string[] = [];
+    for (const rawId of ids) {
+      const id = normalizeCandidateId(rawId);
+      // Preserve malformed and out-of-range IDs so strict validation still
+      // reports them instead of silently hiding model corruption.
+      if (id === null || Number(id) > candidateCount) {
+        result.push(rawId);
+        continue;
+      }
+      if (claimed.has(id)) continue;
+      claimed.add(id);
+      result.push(id);
+    }
+    return result;
+  };
+
+  const kept = filterResult.kept
+    .map((event) => ({
+      ...event,
+      keepIds: keepFirstAssignment(event.keepIds ?? []),
+      mergedIds: keepFirstAssignment(event.mergedIds ?? []),
+    }))
+    .filter((event) => event.keepIds.length + (event.mergedIds?.length ?? 0) > 0);
+
+  const excluded = (filterResult.excluded ?? []).filter((entry) => {
+    const id = normalizeCandidateId(entry.id);
+    return id === null || Number(id) > candidateCount || !claimed.has(id);
+  });
+
+  return { kept, excluded };
+}
+
+/**
  * Generates the personal report: two-stage LLM call → JSON → validate → file save.
  *
  * Stage 1: Filter + semantic merge
  * Stage 2: Generate structured report from filtered events
+ * Stage 2 completion: Generate only the missing events (when LLM omits some filterEventIds)
  */
+
+/** Extract missing filterEventIds when the only blocking errors are FILTER_EVENT_NOT_MAPPED. */
+function extractMissingFilterEventIds(
+  validation: ValidateResult,
+  expectedFilterEventIds: Set<string>,
+  report: PersonalReportJson,
+): string[] | null {
+  const errors = validation.errors;
+  if (errors.length === 0) return null;
+  const nonMappingErrors = errors.filter((e) => e.code !== "FILTER_EVENT_NOT_MAPPED");
+  if (nonMappingErrors.length > 0) return null;
+  const mappedIds = new Set((report.events ?? []).map((e) => e.filterEventId).filter(Boolean) as string[]);
+  const missing = [...expectedFilterEventIds].filter((id) => !mappedIds.has(id));
+  return missing.length > 0 ? missing : null;
+}
+
+/** Build a focused prompt for generating only the missing events. */
+function buildCompletionPrompt(
+  missingFilterEventIds: string[],
+  candidates: MergedCandidate[],
+  filterResult: FilterResult,
+  config: PersonalReportConfig,
+  coverageFrom: string,
+  coverageTo: string,
+): string {
+  const candidateLookup = new Map<number, MergedCandidate>();
+  candidates.forEach((c, i) => candidateLookup.set(i + 1, c));
+
+  const eventBlocks = missingFilterEventIds
+    .map((feid) => {
+      const idx = parseInt(feid.replace("filter-event-", ""), 10) - 1;
+      const event = filterResult.kept[idx];
+      if (!event) return null;
+      const keepCandidates = event.keepIds
+        .map((id) => candidateLookup.get(Number(id)))
+        .filter(Boolean) as MergedCandidate[];
+      const mergedCandidates = (event.mergedIds ?? [])
+        .map((id) => candidateLookup.get(Number(id)))
+        .filter(Boolean) as MergedCandidate[];
+      const allCandidates = [...keepCandidates, ...mergedCandidates];
+      const allSources = allCandidates.flatMap((c) => [
+        { name: c.sourceName, url: c.sourceUrl },
+        ...c.additionalSources.map((url) => ({ name: "Additional Source", url })),
+      ]);
+      const seenUrls = new Set<string>();
+      const uniqueSources = allSources.filter((s) => {
+        if (seenUrls.has(s.url)) return false;
+        seenUrls.add(s.url);
+        return true;
+      });
+
+      return (
+        `[Event ${idx + 1}] filterEventId: ${feid}\n` +
+        `  Title: ${event.title}\n` +
+        `  Topic: ${event.topic}\n` +
+        `  Relevance: ${event.relevance}\n` +
+        `  Confidence: ${event.confidence}\n` +
+        `  Needs Context: ${event.needsContext}\n` +
+        `  Candidate Details:\n` +
+        allCandidates
+          .map(
+            (c) =>
+              `    - ${c.title} (${c.subject})\n` +
+              `      Summary: ${c.summary}\n` +
+              `      Type: ${c.infoType}, Time: ${c.eventTime}, Official: ${c.officialConfirmed}\n` +
+              `      Source: ${c.sourceName} - ${c.sourceUrl}\n` +
+              `      Raw: ${c.rawSummary}`,
+          )
+          .join("\n") +
+        `\n  Available Sources: ${JSON.stringify(uniqueSources)}`
+      );
+    })
+    .filter(Boolean)
+    .join("\n\n");
+
+  const expectedFeids = missingFilterEventIds.map((id) => `"${id}"`).join(", ");
+
+  return `你是一位 AI 技术领域的个人情报分析师。之前的报告生成遗漏了以下事件，请仅为这些缺失事件生成结构化 JSON，不要修改已有事件、不要重写完整报告、不要重新生成概览或主题分组。
+
+## 用户画像
+- 主力工具：${config.primaryTools.join("、")}
+- 平台：${config.platforms.join("、")}
+- 使用场景：${config.usageContext}
+- 高优先级关注方向：${config.focusTopics.join("、")}
+- 实际模型后端：${config.modelBackend}
+
+## 覆盖时间
+${coverageFrom} ～ ${coverageTo}
+
+## 缺失事件（仅需为这些生成内容）
+${eventBlocks}
+
+## 输出要求
+
+请输出严格的 JSON（不要包含 markdown 代码块标记），结构如下：
+
+{
+  "events": [
+    {
+      "id": "evt-N",
+      "filterEventId": "filter-event-N",
+      "title": "事件标题",
+      "topic": "主题名",
+      "eventTime": "ISO-8601",
+      "updateKind": "new 或 updated 或 snapshot-change",
+      "status": "已确认 或 社区信号",
+      "quick": { "what": "...", "why": "...", "impact": "...", "action": "..." },
+      "full": { "background": "...", "evidence": "...", "analysis": "...", "impact": "...", "action": "...", "limitations": "..." },
+      "candidateIds": ["可用来源 URL"],
+      "sources": [{ "name": "来源名", "url": "URL" }],
+      "projectContext": "需要时"
+    }
+  ]
+}
+
+## 规则
+
+1. 仅为上面列出的缺失 filterEventId 生成事件，每个恰好一个。
+2. filterEventId 必须精确匹配上面给出的值：${expectedFeids}。
+3. candidateIds 和 sources 中的 URL 必须来自该事件的 Available Sources，禁止编造。
+4. 每个事件必须有唯一的 id（格式 evt-N），不得与已有事件 ID 冲突。
+5. 不要生成 toolStatus、fiveMinuteBrief、fullReport 或任何其他字段。
+6. quick 用于概览：what/why/impact/action 必须非空。
+7. full 用于完整报告：background/evidence/analysis/impact/action 必须非空。`;
+}
+
+/** Merge completion events into an existing report with strict fail-closed validation. */
+function mergeCompletionEvents(
+  existing: PersonalReportJson,
+  completionEvents: ReportEvent[],
+  expectedMissingIds: Set<string>,
+): ReportEvent[] | null {
+  const existingIds = new Set(existing.events.map((e) => e.id));
+  const existingFeids = new Set(existing.events.map((e) => e.filterEventId).filter(Boolean) as string[]);
+
+  // Phase 1: Validate every completion event before touching the report
+  const seenCompletionFeids = new Set<string>();
+  const seenCompletionIds = new Set<string>();
+
+  for (const evt of completionEvents) {
+    if (!evt.filterEventId || !expectedMissingIds.has(evt.filterEventId)) return null;
+    if (existingFeids.has(evt.filterEventId)) return null;
+    if (existingIds.has(evt.id)) return null;
+    if (seenCompletionFeids.has(evt.filterEventId)) return null;
+    if (seenCompletionIds.has(evt.id)) return null;
+    seenCompletionFeids.add(evt.filterEventId);
+    seenCompletionIds.add(evt.id);
+  }
+
+  // Check all expected missing IDs are exactly covered
+  for (const feid of expectedMissingIds) {
+    if (!seenCompletionFeids.has(feid)) return null;
+  }
+
+  // Phase 2: All validation passed — atomically merge
+  const merged = [...existing.events, ...completionEvents];
+
+  for (const evt of completionEvents) {
+    let placed = false;
+    for (const group of existing.fullReport.topicGroups) {
+      if (group.name === evt.topic) {
+        group.eventIds.push(evt.id);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      existing.fullReport.topicGroups.push({ name: evt.topic, eventIds: [evt.id] });
+    }
+  }
+
+  return merged;
+}
 export async function generatePersonalReport(
   candidates: MergedCandidate[],
   config: PersonalReportConfig,
@@ -814,25 +1623,102 @@ export async function generatePersonalReport(
   dateStr: string,
   lang: Lang,
 ): Promise<{ json: PersonalReportJson; markdown: string } | null> {
-  if (candidates.length === 0) {
+  const coveredCandidates = filterCandidatesByCoverage(candidates, coverageFrom, coverageTo);
+  if (coveredCandidates.length !== candidates.length) {
+    console.log(
+      "  [personal] Coverage filter: " +
+        coveredCandidates.length +
+        "/" +
+        candidates.length +
+        " candidates in window",
+    );
+  }
+
+  if (coveredCandidates.length === 0) {
     console.log("  [personal] No candidates — generating no-update report.");
     return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
   }
 
   // Stage 1: Filter and merge
   console.log("  [personal] Stage 1: filtering and merging candidates...");
-  const filterPrompt = buildFilterPrompt(candidates, config, coverageFrom, coverageTo);
-  const filterRaw = await callLlm(filterPrompt, FILTER_TOKENS);
-  let filterResult = parseLlmJson<FilterResult>(filterRaw);
+  const filterPrompt = buildFilterPrompt(coveredCandidates, config, coverageFrom, coverageTo);
+  let filterResult = await callLlmJsonWithRepair<FilterResult>(filterPrompt, FILTER_TOKENS);
 
   if (!filterResult || !Array.isArray(filterResult.kept)) {
     console.error("  [personal] Stage 1 filter failed — aborting.");
     return null;
   }
 
-  if (filterResult.kept.length === 0) {
-    console.log("  [personal] Stage 1 filtered all candidates — generating no-update report.");
-    return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
+  filterResult = normalizeFilterResultAssignments(filterResult, coveredCandidates.length);
+
+  // Post-Stage1 deterministic gate: remove kept events with hard-excluded or excess-discovery candidates
+  const hardExclusionAudit: Array<{ candidateId: string; title: string; reason: string }> = [];
+  const removedEventTitles: string[] = [];
+  let projectDiscoveryCount = 0;
+
+  filterResult.kept = filterResult.kept.filter((event) => {
+    const eventCandidateIds = [...(event.keepIds ?? []), ...(event.mergedIds ?? [])];
+    // Check hard exclusion
+    for (const id of eventCandidateIds) {
+      const idx = Number(id) - 1;
+      const c = coveredCandidates[idx];
+      if (c && isHardExcluded(c, config)) {
+        removedEventTitles.push(event.title);
+        for (const cid of eventCandidateIds) {
+          const ci = Number(cid) - 1;
+          const cc = coveredCandidates[ci];
+          if (!cc) continue;
+          const reason = isHardExcluded(cc, config)
+            ? getHardExclusionReason(cc, config)
+            : "removed-with-hard-excluded-event";
+          hardExclusionAudit.push({ candidateId: cid, title: cc.title, reason });
+          // Add to filterResult.excluded if not already present
+          const normalizedCid = normalizeCandidateId(cid);
+          if (
+            normalizedCid &&
+            !filterResult.excluded.some((ex) => normalizeCandidateId(ex.id) === normalizedCid)
+          ) {
+            filterResult.excluded.push({ id: normalizedCid, reason });
+          }
+        }
+        return false;
+      }
+    }
+    // Check project discovery cap
+    const eventCandidates = eventCandidateIds
+      .map((id) => coveredCandidates[Number(id) - 1])
+      .filter(Boolean) as MergedCandidate[];
+    const hasDiscovery = eventCandidates.some((c) => isProjectDiscovery(c));
+    if (hasDiscovery) {
+      projectDiscoveryCount++;
+      if (projectDiscoveryCount > config.maxProjectDiscoveries) {
+        removedEventTitles.push(event.title);
+        for (const cid of eventCandidateIds) {
+          const cc = coveredCandidates[Number(cid) - 1];
+          if (!cc) continue;
+          const reason = "project-discovery-limit";
+          hardExclusionAudit.push({ candidateId: cid, title: cc.title, reason });
+          const normalizedCid = normalizeCandidateId(cid);
+          if (
+            normalizedCid &&
+            !filterResult.excluded.some((ex) => normalizeCandidateId(ex.id) === normalizedCid)
+          ) {
+            filterResult.excluded.push({ id: normalizedCid, reason });
+          }
+        }
+        return false;
+      }
+    }
+    return true;
+  });
+  if (removedEventTitles.length > 0) {
+    console.log(
+      "  [personal] Post-Stage1 gate: removed " +
+        removedEventTitles.length +
+        " events (" +
+        removedEventTitles.join("; ") +
+        ")",
+    );
   }
 
   // Deterministic cap: Stage 1 must not exceed fullReportLimit
@@ -843,12 +1729,25 @@ export async function generatePersonalReport(
     filterResult = capFilterResult(filterResult, config.fullReportLimit);
   }
 
+  // Re-scan final filterResult.kept to build discoveryFilterEventIds with correct positions
+  const discoveryFilterEventIds = new Set<string>();
+  for (let i = 0; i < filterResult.kept.length; i++) {
+    const event = filterResult.kept[i]!;
+    const eventCandidateIds = [...(event.keepIds ?? []), ...(event.mergedIds ?? [])];
+    const eventCandidates = eventCandidateIds
+      .map((id) => coveredCandidates[Number(id) - 1])
+      .filter(Boolean) as MergedCandidate[];
+    if (eventCandidates.some((c) => isProjectDiscovery(c))) {
+      discoveryFilterEventIds.add(`filter-event-${i + 1}`);
+    }
+  }
+
   console.log(
     `  [personal] Filter: ${filterResult.kept.length} events kept, ${filterResult.excluded?.length ?? 0} excluded`,
   );
 
   // Validate Stage 1 filter result integrity
-  const filterValidation = validateFilterResult(filterResult, candidates.length);
+  const filterValidation = validateFilterResult(filterResult, coveredCandidates.length);
   if (!filterValidation.ok) {
     console.error("  [personal] Stage 1 filter validation failed:");
     for (const err of filterValidation.errors) {
@@ -857,12 +1756,180 @@ export async function generatePersonalReport(
     return null;
   }
 
+  // --- Underfilled recovery pass ---
+  const minimumTarget = Math.min(config.fullReportMinimum, config.fullReportLimit);
+  const initialKeptCount = filterResult.kept.length;
+  let recoveryTriggered = false;
+  let recoveryCandidateCount = 0;
+  let recoveryAddedCount = 0;
+  let recoveryFailureReason: string | undefined;
+
+  if (initialKeptCount < minimumTarget) {
+    // Build claimed ID set: candidates already used by first-pass events
+    const claimedCandidateIds = new Set<string>();
+    for (const kept of filterResult.kept) {
+      for (const id of [...(kept.keepIds ?? []), ...(kept.mergedIds ?? [])]) {
+        const normalized = normalizeCandidateId(id);
+        if (normalized) claimedCandidateIds.add(normalized);
+      }
+    }
+
+    // Build recovery candidate pool from ALL coveredCandidates minus claimed and hard-excluded.
+    // This handles Stage 1 returning empty excluded (model missed everything).
+    const eligibleRecoveryCandidates: Array<{ id: string; reason: string }> = [];
+    for (let i = 0; i < coveredCandidates.length; i++) {
+      const id = String(i + 1);
+      if (claimedCandidateIds.has(id)) continue;
+      const c = coveredCandidates[i]!;
+      if (isLowValueForRecovery(c, config)) continue;
+      // Check if this candidate was in Stage 1's explicit excluded list for a better reason
+      const explicitExclusion = filterResult.excluded.find((ex) => normalizeCandidateId(ex.id) === id);
+      eligibleRecoveryCandidates.push({
+        id,
+        reason: explicitExclusion ? explicitExclusion.reason : "Stage 1 未分类",
+      });
+    }
+
+    if (eligibleRecoveryCandidates.length > 0) {
+      recoveryTriggered = true;
+      recoveryCandidateCount = eligibleRecoveryCandidates.length;
+      const allowedRecoveryCandidateIds = new Set(
+        eligibleRecoveryCandidates.map((c) => normalizeCandidateId(c.id)).filter(Boolean) as string[],
+      );
+
+      console.log(
+        "  [personal] Stage 1 underfilled: " +
+          initialKeptCount +
+          "/" +
+          minimumTarget +
+          "; running one recovery pass...",
+      );
+
+      try {
+        const recoveryPrompt = buildRecoveryPrompt(
+          filterResult.kept,
+          eligibleRecoveryCandidates,
+          coveredCandidates,
+          config,
+          coverageFrom,
+          coverageTo,
+        );
+        const recoveryResult = await callLlmJsonWithRepair<FilterResult>(recoveryPrompt, FILTER_TOKENS);
+
+        if (recoveryResult && Array.isArray(recoveryResult.kept) && recoveryResult.kept.length > 0) {
+          // Enforce hard exclusion: filter recovery events to only use allowed IDs
+          const validRecoveryKept = filterRecoveryEvents(
+            recoveryResult.kept,
+            allowedRecoveryCandidateIds,
+            claimedCandidateIds,
+          );
+
+          if (validRecoveryKept.length > 0) {
+            // Merge: keep all first-pass events, add filtered recovery events
+            const mergedKept = [...filterResult.kept, ...validRecoveryKept];
+            const mergedResult: FilterResult = {
+              kept: mergedKept,
+              excluded: [...filterResult.excluded],
+            };
+
+            // Normalize to remove duplicate candidate ID assignments
+            const normalized = normalizeFilterResultAssignments(mergedResult, coveredCandidates.length);
+            const mergeValidation = validateFilterResult(normalized, coveredCandidates.length);
+
+            if (mergeValidation.ok) {
+              const addedCount = normalized.kept.length - initialKeptCount;
+              if (addedCount > 0) {
+                // Cap to fullReportLimit
+                const capped =
+                  normalized.kept.length > config.fullReportLimit
+                    ? capFilterResult(normalized, config.fullReportLimit)
+                    : normalized;
+                recoveryAddedCount = capped.kept.length - initialKeptCount;
+                filterResult = capped;
+                console.log(
+                  "  [personal] Recovery added " +
+                    recoveryAddedCount +
+                    " events; final " +
+                    filterResult.kept.length +
+                    "/" +
+                    config.fullReportLimit,
+                );
+              } else {
+                recoveryFailureReason = "recovery-no-new-candidates";
+                console.log(
+                  `  [personal] Recovery: no new candidates after dedup; keeping first-pass result.`,
+                );
+              }
+            } else {
+              recoveryFailureReason = "recovery-merge-validation-failed";
+              console.error(`  [personal] Recovery merge validation failed; keeping first-pass result.`);
+            }
+          } else {
+            recoveryFailureReason = "recovery-all-ids-disallowed";
+            console.log(`  [personal] Recovery: all returned IDs are disallowed; keeping first-pass result.`);
+          }
+        } else {
+          recoveryFailureReason = "recovery-empty-result";
+          console.log(`  [personal] Recovery returned empty result; keeping first-pass result.`);
+        }
+      } catch {
+        recoveryFailureReason = "recovery-llm-call-failed";
+        console.error(`  [personal] Recovery failed: ${recoveryFailureReason}; keeping first-pass result.`);
+      }
+    }
+  }
+
+  // After recovery, if still 0 events, generate no-update report
+  if (filterResult.kept.length === 0) {
+    console.log("  [personal] No events after recovery — generating no-update report.");
+    return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
+  }
+
+  if (initialKeptCount < minimumTarget && filterResult.kept.length < minimumTarget) {
+    console.warn(
+      `  [personal] Warning: final event count ${filterResult.kept.length} is below target ${minimumTarget}; continuing with available content.`,
+    );
+  }
+
+  // Close the loop: any candidate not in kept or excluded must be classified
+  const keptCandidateIds = new Set<string>();
+  for (const kept of filterResult.kept) {
+    for (const id of [...(kept.keepIds ?? []), ...(kept.mergedIds ?? [])]) {
+      const normalized = normalizeCandidateId(id);
+      if (normalized) keptCandidateIds.add(normalized);
+    }
+  }
+  const excludedCandidateIds = new Set<string>();
+  for (const ex of filterResult.excluded ?? []) {
+    const normalized = normalizeCandidateId(ex.id);
+    if (normalized) excludedCandidateIds.add(normalized);
+  }
+  for (let i = 0; i < coveredCandidates.length; i++) {
+    const id = String(i + 1);
+    if (keptCandidateIds.has(id) || excludedCandidateIds.has(id)) continue;
+    filterResult.excluded.push({ id, reason: "stage1-not-selected" });
+  }
+
+  if (process.env["DRY_RUN"] === "true") {
+    const auditData = {
+      ...buildSelectionAudit(coveredCandidates, filterResult),
+      initialKeptCount,
+      minimumTarget,
+      recoveryTriggered,
+      recoveryCandidateCount,
+      recoveryAddedCount,
+      finalKeptCount: filterResult.kept.length,
+      underfilled: filterResult.kept.length < minimumTarget,
+      ...(recoveryFailureReason ? { recoveryFailureReason } : {}),
+      ...(hardExclusionAudit.length > 0 ? { hardExclusions: hardExclusionAudit } : {}),
+    };
+    saveFile(JSON.stringify(auditData, null, 2), dateStr, "selection-audit.json");
+  }
+
   // Stage 2: Generate report from filtered events
   console.log("  [personal] Stage 2: generating structured report...");
-  const reportPrompt = buildReportPrompt(candidates, filterResult, config, coverageFrom, coverageTo);
-  const reportTokens = 8192;
-  const raw = await callLlm(reportPrompt, reportTokens);
-  const json = parseLlmJson<PersonalReportJson>(raw);
+  const reportPrompt = buildReportPrompt(coveredCandidates, filterResult, config, coverageFrom, coverageTo);
+  const json = await callLlmJsonWithRepair<PersonalReportJson>(reportPrompt, REPORT_TOKENS);
 
   if (!json || !json.events) {
     console.error("  [personal] Stage 2 report parse failed.");
@@ -874,20 +1941,103 @@ export async function generatePersonalReport(
   json.coverageFrom = coverageFrom;
   json.coverageTo = coverageTo;
 
+  // Deterministic tagging: mark project discovery events
+  applyProjectDiscoveryTags(json, discoveryFilterEventIds);
+
   // Validate using per-filterEventId URL sets (not a global whitelist)
-  const filterEventUrlMap = buildFilterEventUrlMap(candidates, filterResult);
+  const filterEventUrlMap = buildFilterEventUrlMap(coveredCandidates, filterResult);
   const allKeptUrls = new Set<string>();
   for (const urls of filterEventUrlMap.values()) {
     for (const url of urls) allKeptUrls.add(url);
   }
+  canonicalizeReportSourceUrls(json, allKeptUrls);
+  bindReportEventsToFilterSources(json, filterEventUrlMap);
+  filterAndFillFiveMinuteBrief(
+    json,
+    buildFiveMinuteExcludedFilterEventIds(coveredCandidates, filterResult, config),
+    config.fiveMinuteLimit,
+    0, // Don't pad to 5 — quality over quantity
+  );
   const validation = validateReport(json, config, allKeptUrls, filterEventUrlMap);
 
   if (!validation.ok) {
-    console.error("  [personal] Validation failed:");
-    for (const err of validation.errors) {
-      console.error(`    ${err.code}: ${err.message}`);
+    // Check if the ONLY blocking errors are FILTER_EVENT_NOT_MAPPED
+    const missingIds = extractMissingFilterEventIds(validation, new Set(filterEventUrlMap.keys()), json);
+
+    if (missingIds) {
+      // All errors are FILTER_EVENT_NOT_MAPPED — attempt one completion call
+      const missingFeidSet = new Set(missingIds);
+      console.log(
+        "  [personal] Stage 2 omitted " +
+          missingIds.length +
+          " events (" +
+          missingIds.join(", ") +
+          "); attempting one completion call...",
+      );
+
+      try {
+        const completionPrompt = buildCompletionPrompt(
+          missingIds,
+          coveredCandidates,
+          filterResult,
+          config,
+          coverageFrom,
+          coverageTo,
+        );
+        const completionResult = await callLlmJsonWithRepair<{ events: ReportEvent[] }>(
+          completionPrompt,
+          COMPLETION_TOKENS,
+        );
+
+        if (completionResult?.events && Array.isArray(completionResult.events)) {
+          const mergedEvents = mergeCompletionEvents(json, completionResult.events, missingFeidSet);
+
+          if (mergedEvents) {
+            json.events = mergedEvents;
+
+            // Re-apply project discovery tags after completion merge
+            applyProjectDiscoveryTags(json, discoveryFilterEventIds);
+
+            // Re-run full post-processing and validation
+            canonicalizeReportSourceUrls(json, allKeptUrls);
+            bindReportEventsToFilterSources(json, filterEventUrlMap);
+            filterAndFillFiveMinuteBrief(
+              json,
+              buildFiveMinuteExcludedFilterEventIds(coveredCandidates, filterResult, config),
+              config.fiveMinuteLimit,
+              Math.min(5, config.fiveMinuteLimit),
+            );
+            const revalidation = validateReport(json, config, allKeptUrls, filterEventUrlMap);
+
+            if (revalidation.ok) {
+              console.log("  [personal] Completion successful; final " + json.events.length + " events.");
+            } else {
+              console.error("  [personal] Completion revalidation failed:");
+              for (const err of revalidation.errors) {
+                console.error("    " + err.code + ": " + err.message);
+              }
+              return null;
+            }
+          } else {
+            console.error("  [personal] Completion merge failed — missing IDs not fully covered.");
+            return null;
+          }
+        } else {
+          console.error("  [personal] Completion returned no valid events.");
+          return null;
+        }
+      } catch {
+        console.error("  [personal] Completion LLM call failed.");
+        return null;
+      }
+    } else {
+      // Errors include non-mapping issues — fail closed, no completion attempted
+      console.error("  [personal] Validation failed:");
+      for (const err of validation.errors) {
+        console.error("    " + err.code + ": " + err.message);
+      }
+      return null;
     }
-    return null;
   }
 
   const markdown = renderMarkdown(json, dateStr, lang);
@@ -974,8 +2124,15 @@ export function buildReportPrompt(
         return true;
       });
 
+      // Detect if this is a project discovery event
+      const hasDiscovery = allCandidates.some((c) => isProjectDiscovery(c));
+      const discoveryLabel = hasDiscovery
+        ? "  [首次项目发现] 标记: true — 这不是本期更新，是首次发现的项目\n"
+        : "";
+
       return (
         `[Event ${i + 1}] filterEventId: filter-event-${i + 1}\n` +
+        discoveryLabel +
         `  Title: ${event.title}\n` +
         `  Topic: ${event.topic}\n` +
         `  Relevance: ${event.relevance}\n` +
@@ -1068,12 +2225,15 @@ ${eventBlocks}
 ## 规则
 
 ### 事件筛选
-1. 完整报告正常包含 ${config.fullReportLimit} 个真正有价值的事件；信息不足时允许更少，不准凑数。
-2. 五分钟概览从完整报告中选择价值最高的 ${config.fiveMinuteLimit} 个事件。
+1. 完整报告至多 ${config.fullReportLimit} 条；质量足够时通常接近目标，信息不足可以更少，不准凑数。
+2. 五分钟概览至多 ${config.fiveMinuteLimit} 条；可少于 5 条或为空，不得回填低价值内容。从完整报告中选择最高价值事件。
 3. fiveMinuteBrief 的 eventIds 必须是 fullReport eventIds 的子集。
 4. 按动态主题组织，不按来源或项目机械分组。
 5. 每个事件必须有唯一的 id（格式 evt-N）。
 6. 每个事件必须原样输出 filterEventId（格式 filter-event-N），不得修改。
+   - filterEventId 必须与该事件所在的 [Event N] 块一致；不要按最终输出顺序重新编号。
+   - 每个 [Event N] 块必须恰好生成一个最终事件，candidateIds 和 sources 只能复制该块的 Available Sources。
+   - 不得遗漏任何 [Event N] 块——输入中有多少个 [Event N]，就必须输出多少个最终事件。
 7. 每个事件必须有 eventTime（ISO-8601 格式）。
 7. 每个事件必须有 candidateIds。
 8. updateKind 必须是 "new"、"updated" 或 "snapshot-change"。
@@ -1087,16 +2247,22 @@ ${eventBlocks}
 14. toolStatus 的 key 必须是：${config.primaryTools.join("、")}。
 15. 主力工具没有高价值更新时，toolStatus 写"本期无重要更新"。
 16. 陌生项目必须包含 projectContext。
+17. 标记为 [首次项目发现] 的事件：isProjectDiscovery 设为 true；不得伪装成"本期发布/更新"；不得进入五分钟概览。
 
 ### 排除规则
 17. ${config.usesAnthropicSubscription ? "" : "用户不使用 Anthropic Claude 订阅，Anthropic Claude 模型/账号/订阅的价格变化直接排除。"}
-18. AI CLI 活跃度、Star、成熟度、横向排名排除。
-19. 普通 Claw 项目和生态动态排除。
-20. 公司战略、市场定位、社区治理排除。
-21. 纯 UI、项目自身 CI 排除。
-22. 纯版本号更新排除，除非有实质功能变化。
-23. 商业机会只有在具体、可信、可行动时才提及。
-24. 五分钟概览的入选门槛更高：必须会改变用户当前行动、决策、能力边界、效率或可靠性。`;
+18. ${config.usesAnthropicAccount || config.usesAnthropicSubscription ? "" : "依赖 Anthropic 账号或订阅、claude.ai Web/移动端登录的功能直接排除；不要把 Claude Code 客户端等同于 Anthropic 服务。"}
+19. 用户未确认使用 Remote Control、本地代理或特定高级功能时，不得用“可能受影响”推断相关性。
+20. 尚未交付、没有当前行动的功能请求排除。
+21. AI CLI 活跃度、Star、成熟度、横向排名排除。
+22. 普通 Claw 项目和生态动态排除。
+23. 公司战略、市场定位、社区治理排除。
+24. 纯 UI、项目自身 CI 排除。
+25. 纯版本号更新排除，除非有实质功能变化。
+26. 商业机会只有在具体、可信、可行动时才提及。
+27. 五分钟概览的入选门槛更高：必须会改变用户当前行动、决策、能力边界、效率或可靠性。
+28. 非主力工具普通版本更新、首次项目发现、泛讨论/观点文章不得进入五分钟概览。
+29. 五分钟概览可以少于 5 条甚至为空，不得为凑数降低门槛。`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,6 +2306,182 @@ export function buildFilterEventUrlMap(
     map.set(filterEventId, urls);
   }
   return map;
+}
+
+/**
+ * Rebind the model-copied filterEventId from its source URLs when they identify
+ * exactly one Stage 1 event. The strict validator still rejects events whose
+ * URLs span multiple Stage 1 events or do not belong to any kept event.
+ */
+export function bindReportEventsToFilterSources(
+  report: Pick<PersonalReportJson, "events">,
+  filterEventUrlMap: Map<string, Set<string>>,
+): void {
+  for (const event of report.events ?? []) {
+    const eventUrls = new Set([
+      ...(event.candidateIds ?? []),
+      ...(event.sources ?? []).map((source) => source.url).filter(Boolean),
+    ]);
+    if (eventUrls.size === 0) continue;
+
+    const matches = [...filterEventUrlMap.entries()].filter(([, allowedUrls]) =>
+      [...eventUrls].every((url) => allowedUrls.has(url)),
+    );
+    if (matches.length === 1) {
+      event.filterEventId = matches[0]![0];
+    }
+  }
+}
+
+function sourceUrlIdentity(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    return `${parsed.host.toLowerCase()}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Restore an LLM-normalized URL (for example ArXiv http → https) to the exact
+ * URL collected from a kept candidate. Unknown or ambiguous URLs are left
+ * untouched so strict validation can still reject them.
+ */
+export function canonicalizeReportSourceUrls(
+  report: Pick<PersonalReportJson, "events">,
+  candidateUrls: Set<string>,
+): void {
+  const canonicalByIdentity = new Map<string, string | null>();
+  for (const candidateUrl of candidateUrls) {
+    const identity = sourceUrlIdentity(candidateUrl);
+    if (!identity) continue;
+    const existing = canonicalByIdentity.get(identity);
+    canonicalByIdentity.set(identity, existing && existing !== candidateUrl ? null : candidateUrl);
+  }
+
+  const canonicalize = (url: string): string => {
+    if (candidateUrls.has(url)) return url;
+    const identity = sourceUrlIdentity(url);
+    return (identity ? canonicalByIdentity.get(identity) : null) ?? url;
+  };
+
+  for (const event of report.events ?? []) {
+    event.candidateIds = (event.candidateIds ?? []).map(canonicalize);
+    for (const source of event.sources ?? []) {
+      source.url = canonicalize(source.url);
+    }
+  }
+}
+
+export function capFiveMinuteBrief(brief: PersonalReportJson["fiveMinuteBrief"], limit: number): void {
+  let remaining = Math.max(0, Math.floor(limit));
+  brief.topicGroups = (brief.topicGroups ?? [])
+    .map((group) => {
+      const eventIds = (group.eventIds ?? []).slice(0, remaining);
+      remaining -= eventIds.length;
+      return { ...group, eventIds };
+    })
+    .filter((group) => group.eventIds.length > 0);
+}
+
+export function buildFiveMinuteExcludedFilterEventIds(
+  candidates: MergedCandidate[],
+  filterResult: FilterResult,
+  config: PersonalReportConfig,
+): Set<string> {
+  const result = new Set<string>();
+  const backend = config.modelBackend.toLowerCase();
+
+  for (let index = 0; index < filterResult.kept.length; index++) {
+    const event = filterResult.kept[index]!;
+    const eventCandidates = [...event.keepIds, ...(event.mergedIds ?? [])]
+      .map((id) => candidates[Number(id) - 1])
+      .filter(Boolean) as MergedCandidate[];
+    if (eventCandidates.length === 0) continue;
+
+    const filterEventId = `filter-event-${index + 1}`;
+
+    // Non-primary CLI release
+    const isNonPrimaryRelease = eventCandidates.every((candidate) => {
+      const category = categorizeSource(candidate, config.primaryTools);
+      return candidate.infoType === "release" && category !== "codex" && category !== "claudeCode";
+    });
+
+    // Non-backend benchmark article
+    const isNonBackendBenchmark = eventCandidates.every((candidate) => {
+      const text = `${candidate.title} ${candidate.summary} ${candidate.rawSummary}`;
+      const publisher = `${candidate.sourceName} ${candidate.subject}`.toLowerCase();
+      const providerContext = `${publisher} ${text}`.toLowerCase();
+      return (
+        candidate.infoType === "article" &&
+        /(?:benchmark|arc[-\s]?agi|scores?|accuracy|leaderboard|基准|得分|分数|准确率|榜单)/i.test(text) &&
+        /\b(?:openai|anthropic|google|deepmind|gemini|gpt|claude|xai|grok|mistral|deepseek|qwen|mimo)\b/i.test(
+          providerContext,
+        ) &&
+        !providerContext.includes(backend)
+      );
+    });
+
+    // GitHub Search project discovery — ALWAYS excluded from brief
+    if (eventCandidates.some((c) => isProjectDiscovery(c))) {
+      result.add(filterEventId);
+      continue;
+    }
+
+    // Generic discussion / opinion — excluded from brief
+    if (eventCandidates.every((c) => isGenericDiscussion(c))) {
+      result.add(filterEventId);
+    }
+
+    if (
+      isNonPrimaryRelease ||
+      isNonBackendBenchmark ||
+      eventCandidates.every((c) => isGenericDiscussion(c))
+    ) {
+      result.add(filterEventId);
+    }
+  }
+  return result;
+}
+
+export function filterAndFillFiveMinuteBrief(
+  report: Pick<PersonalReportJson, "events" | "fiveMinuteBrief" | "fullReport">,
+  disallowedFilterEventIds: Set<string>,
+  limit: number,
+  minimum: number,
+): void {
+  const disallowedEventIds = new Set(
+    (report.events ?? [])
+      .filter((event) => event.filterEventId && disallowedFilterEventIds.has(event.filterEventId))
+      .map((event) => event.id),
+  );
+
+  report.fiveMinuteBrief.topicGroups = (report.fiveMinuteBrief.topicGroups ?? [])
+    .map((group) => ({
+      ...group,
+      eventIds: (group.eventIds ?? []).filter((eventId) => !disallowedEventIds.has(eventId)),
+    }))
+    .filter((group) => group.eventIds.length > 0);
+
+  const selected = new Set(report.fiveMinuteBrief.topicGroups.flatMap((group) => group.eventIds));
+  const target = Math.min(Math.max(0, minimum), Math.max(0, limit));
+  for (const fullGroup of report.fullReport.topicGroups ?? []) {
+    for (const eventId of fullGroup.eventIds ?? []) {
+      if (selected.size >= target) break;
+      if (selected.has(eventId) || disallowedEventIds.has(eventId)) continue;
+      let briefGroup = report.fiveMinuteBrief.topicGroups.find((group) => group.name === fullGroup.name);
+      if (!briefGroup) {
+        briefGroup = { name: fullGroup.name, eventIds: [] };
+        report.fiveMinuteBrief.topicGroups.push(briefGroup);
+      }
+      briefGroup.eventIds.push(eventId);
+      selected.add(eventId);
+    }
+    if (selected.size >= target) break;
+  }
+
+  capFiveMinuteBrief(report.fiveMinuteBrief, limit);
 }
 
 /** @deprecated Use buildFilterEventUrlMap for per-event validation. */
@@ -1559,7 +2901,8 @@ function renderEventQuick(evt: ReportEvent, lang: Lang, index: number): string[]
 
 function renderEventFull(evt: ReportEvent, lang: Lang): string[] {
   const lines: string[] = [];
-  lines.push(`### ${evt.title}`);
+  const titlePrefix = evt.isProjectDiscovery ? "🔍 首次项目发现｜非本期更新 — " : "";
+  lines.push(`### ${titlePrefix}${evt.title}`);
   lines.push("");
   lines.push(`- **${lang === "zh" ? "发生了什么" : "What"}**：${evt.quick.what}`);
   if (evt.full.background)
