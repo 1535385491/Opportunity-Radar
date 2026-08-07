@@ -1,0 +1,9 @@
+{
+  "ai-personal": [
+    "OpenAI Codex rust-v0.147.0 发布：新增可安装的 Agent 插件与对话部分管理功能：Codex 新版支持安装和搜索可移植的 Agent 插件（本地、个人、工作区、远程目录），并允许将长对话组织成持久化、可排序的部分。",
+    "Claude Code v2.1.223 发布：增强组织仓库管理策略与工作流代理警告：Claude Code 新增对 GitHub 组织所有仓库的通配符管理策略，并对工作流代理、分叉技能等组件增加了明确的安全警告。",
+    "OpenAI Codex rust-v0.146.1 发布：应用更安全的自动审查默认值并解释权限变更：Codex 后续版本针对具备网络能力的模型应用了更安全的自动审查默认设置，并在终端界面中解释了相关权限变更。",
+    "论文《TS-RAG: Retrieval Augmented Generation for Time Series Forecasting》：一篇新论文提出 TS-RAG，将检索增强生成（RAG）技术应用于时间序列预测任务，旨在结合历史模式检索和生成模型的优势。",
+    "论文《Is Self-Pretraining really useful to improve diagnosis in medical Time Series?》：一项研究评估了自监督预训练（Self-PreTraining）在提升医疗时序数据诊断性能方面的实际效果。"
+  ]
+}

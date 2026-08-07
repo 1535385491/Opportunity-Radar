@@ -1,0 +1,30 @@
+{
+  "summary": "OpenAI Codex rust-v0.147.0 发布：新增可安装的 Agent 插件与对话部分管理功能：Codex 新版支持安装和搜索可移植的 Agent 插件（本地、个人、工作区、远程目录），并允许将长对话组织成持久化、可排序的部分。",
+  "signals": [
+    {
+      "title": "OpenAI Codex rust-v0.147.0 发布：新增可安装的 Agent 插件与对话部分管理功能",
+      "description": "评估新的插件系统，探索是否将现有诊断或信息收集工具封装为插件；尝试在复杂对话中使用部分管理功能来提升效率。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Claude Code v2.1.223 发布：增强组织仓库管理策略与工作流代理警告",
+      "description": "如果您的个人项目涉及 GitHub 组织或多仓库管理，可评估新的通配符策略以简化配置。注意观察工作流代理的警告提示，理解其含义并评估自身工作流的合规性。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "AWS 开源 Kiro Crew：一个用于跨会话、调度和仓库协调 AI 编码代理的持久化工作空间",
+      "description": "深入调研 Kiro Crew 的架构和实现（特别是其状态持久化和协调机制），评估其是否适用于个人智能诊断或自动化信息收集项目的长期演进。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "OpenAI Codex rust-v0.146.1 发布：应用更安全的自动审查默认值并解释权限变更",
+      "description": "无需立即行动，但应感知到 Codex 在工具安全默认值上的演进方向。在后续使用中留意终端提示的权限变更信息。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "论文《TS-RAG: Retrieval Augmented Generation for Time Series Forecasting》",
+      "description": "获取并阅读该论文（ArXiv: 2608.06223），重点关注其 RAG 架构在时序数据上的具体实现（如检索库的构建、相似度计算方式），评估迁移应用到个人故障诊断项目的可能性。",
+      "report": "ai-personal"
+    }
+  ]
+}

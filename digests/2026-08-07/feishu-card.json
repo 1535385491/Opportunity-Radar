@@ -1,0 +1,36 @@
+{
+  "header": {
+    "title": {
+      "tag": "plain_text",
+      "content": "📡 agents-radar · 2026-08-07"
+    },
+    "template": "blue"
+  },
+  "elements": [
+    {
+      "tag": "markdown",
+      "content": "**📋 五分钟概览**\n\n1. **OpenAI Codex rust-v0.147.0 发布：新增可安装的 Agent 插件与对话部分管理功能**\n   Codex 新版支持安装和搜索可移植的 Agent 插件（本地、个人、工作区、远程目录），并允许将长对话组织成持久化、可排序的部分。 → 这直接扩展了 Codex 的工具集成生态，并显著改善了复杂、长周期开发任务下的上下文管理能力。\n2. **Claude Code v2.1.223 发布：增强组织仓库管理策略与工作流代理警告**\n   Claude Code 新增对 GitHub 组织所有仓库的通配符管理策略，并对工作流代理、分叉技能等组件增加了明确的安全警告。 → 这在团队或跨仓库协作场景下，提供了更精细的权限控制和更透明的安全边界提示，关乎工作流的可靠性和工程安全。\n3. **OpenAI Codex rust-v0.146.1 发布：应用更安全的自动审查默认值并解释权限变更**\n   Codex 后续版本针对具备网络能力的模型应用了更安全的自动审查默认设置，并在终端界面中解释了相关权限变更。 → 这直接提升了 AI 工具在处理敏感或外部交互时的安全性和透明度，降低了意外风险。\n4. **论文《TS-RAG: Retrieval Augmented Generation for Time Series Forecasting》**\n   一篇新论文提出 TS-RAG，将检索增强生成（RAG）技术应用于时间序列预测任务，旨在结合历史模式检索和生成模型的优势。 → 这是将 RAG 概念从文本领域拓展到时序数据领域的直接研究，为用户在智能诊断项目中处理时序数据提供了新的技术思路。\n5. **论文《Is Self-Pretraining really useful to improve diagnosis in medical Time Series?》**\n   一项研究评估了自监督预训练（Self-PreTraining）在提升医疗时序数据诊断性能方面的实际效果。 → 该研究直接在医疗时序诊断任务上验证预训练技术的有效性，为用户的“智能诊断”项目是否采用、以及如何评估此类技术提供了实证参考。"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**🔧 主力工具状态**\n\n• **codex**：rust-v0.147.0 新增可安装 Agent 插件及对话管理功能，rust-v0.146.1 应用了更安全的自动审查默认值，工具能力与安全性同步提升。\n• **claude-code**：v2.1.223 增强了对组织所有仓库的管理策略，并对工作流代理等组件增加了安全警告提示。"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**📎 查看完整报告**\n\n• [AI 前沿个人简报](https://1535385491.github.io/Opportunity-Radar/#2026-08-07/ai-personal)"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "[🌐 Web UI](https://1535385491.github.io/Opportunity-Radar)  ·  [⊕ RSS](https://1535385491.github.io/Opportunity-Radar/feed.xml)"
+    }
+  ]
+}
