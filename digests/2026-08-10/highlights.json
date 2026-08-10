@@ -1,0 +1,6 @@
+{
+  "ai-personal": [
+    "Claude Code v2.1.224 新增自托管运行环境支持：Claude Code 发布 v2.1.224 版本，引入 `claude self-hosted-runner` 命令，允许将用户自有机器或容器作为 Claude Code 会话的执行环境。",
+    "OpenAI 意外攻击 Hugging Face 事件时间线披露：一起由 OpenAI 工具意外触发的、针对 Hugging Face 基础设施的安全攻击事件被详细披露了时间线。"
+  ]
+}

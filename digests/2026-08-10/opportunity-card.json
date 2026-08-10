@@ -1,0 +1,25 @@
+{
+  "summary": "Claude Code v2.1.224 新增自托管运行环境支持：Claude Code 发布 v2.1.224 版本，引入 `claude self-hosted-runner` 命令，允许将用户自有机器或容器作为 Claude Code 会话的执行环境。",
+  "signals": [
+    {
+      "title": "Claude Code v2.1.224 新增自托管运行环境支持",
+      "description": "评估该功能是否满足个人项目对环境控制、数据隐私或与特定本地工具链集成的需求。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "OpenAI 意外攻击 Hugging Face 事件时间线披露",
+      "description": "审视并加强当前自动化信息收集工具、智能诊断项目中的安全措施，特别是工具调用的授权与边界控制。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "moorcheh-ai/memanto：为 AI Agent 设计的长期记忆系统",
+      "description": "初步浏览项目文档和代码，评估其架构设计（如状态存储、检索机制）是否与自身项目（如智能诊断、故障案例推理）的知识管理需求匹配。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Athena-Public：本地优先的智能个人知识管理工具",
+      "description": "初步了解项目的功能边界、技术实现（特别是 GraphRAG 部分）以及其“治理型 Agent”的具体含义。",
+      "report": "ai-personal"
+    }
+  ]
+}
