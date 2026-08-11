@@ -11,6 +11,8 @@
  * Provider-specific env vars — see src/providers/ for full list.
  */
 
+import "dotenv/config";
+
 import {
   type GitHubItem,
   type RepoFetch,
@@ -231,7 +233,7 @@ function extractAllCandidates(
 
   // Data sources
   candidates.push(...extractWebCandidates(webResults, 8));
-  candidates.push(...extractTrendingCandidates(trendingData, 5));
+  candidates.push(...extractTrendingCandidates(trendingData, 14));
   candidates.push(...extractHnCandidates(hnData, 5));
   candidates.push(...extractPhCandidates(phData, 3));
   candidates.push(...extractArxivCandidates(arxivData, 5));
