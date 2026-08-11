@@ -23,13 +23,23 @@ import {
   buildCandidateUrlSet,
   buildKeptCandidateUrlSet,
   buildFilterEventUrlMap,
+  bindReportEventsToFilterSources,
+  canonicalizeReportSourceUrls,
+  capFiveMinuteBrief,
+  callLlmJsonWithRepair,
+  normalizeFilterResultAssignments,
+  buildFiveMinuteExcludedFilterEventIds,
+  filterAndFillFiveMinuteBrief,
   validateReport,
   validateFilterResult,
   guardReportSchema,
   generateNoUpdateReport,
   renderPersonalReportMarkdown,
   capFilterResult,
+  filterCandidatesByCoverage,
+  buildSelectionAudit,
   CATEGORY_LIMITS,
+  REPORT_TOKENS,
 } from "../personal-report.ts";
 import type {
   CandidateItem,
@@ -37,6 +47,7 @@ import type {
   FilterResult,
   FilterResultItem,
   PersonalReportJson,
+  ReportEvent,
 } from "../personal-report.ts";
 import type { PersonalReportConfig } from "../config.ts";
 import type { RepoFetch } from "../github.ts";
@@ -174,7 +185,7 @@ describe("extractWebCandidates", () => {
 // ---------------------------------------------------------------------------
 
 describe("extractTrendingCandidates", () => {
-  it("extracts from trending and search repos", () => {
+  it("uses topic search results instead of activity-only trending rankings", () => {
     const data = {
       trendingRepos: [
         {
@@ -197,13 +208,65 @@ describe("extractTrendingCandidates", () => {
           url: "https://github.com/ai/agent",
           searchQuery: "ai-agent",
         },
+        {
+          fullName: "memory/project",
+          description: "Long-term memory for agents",
+          language: "Python",
+          stargazersCount: 800,
+          pushedAt: "2026-07-27",
+          url: "https://github.com/memory/project",
+          searchQuery: "agent-memory",
+        },
+        {
+          fullName: "rag/project",
+          description: "RAG evaluation toolkit",
+          language: "Python",
+          stargazersCount: 700,
+          pushedAt: "2026-07-28",
+          url: "https://github.com/rag/project",
+          searchQuery: "rag",
+        },
       ],
       trendingFetchSuccess: true,
       snapshotMarkers: { trendingNames: [], starCounts: {} },
     };
-    const result = extractTrendingCandidates(data);
-    expect(result.length).toBeGreaterThan(0);
-    expect(result.some((c) => c.sourceName === "GitHub Trending")).toBe(true);
+    const result = extractTrendingCandidates(data, 3);
+    expect(result).toHaveLength(3);
+    expect(result.every((c) => c.sourceName.startsWith("GitHub Search"))).toBe(true);
+    expect(result.some((c) => c.sourceName === "GitHub Trending")).toBe(false);
+    expect(new Set(result.map((c) => c.sourceName)).size).toBe(3);
+    expect(result.every((c) => c.infoType === "product")).toBe(true);
+    expect(result.every((c) => !c.rawSummary.includes("Stars:"))).toBe(true);
+  });
+
+  it("preserves GitHub Search ranking within a focus topic instead of favoring the latest push", () => {
+    const data = {
+      trendingRepos: [],
+      searchRepos: [
+        {
+          fullName: "quality/first",
+          description: "Mature long-term memory",
+          language: "Python",
+          stargazersCount: 1000,
+          pushedAt: "2026-07-30",
+          url: "https://github.com/quality/first",
+          searchQuery: "agent-memory",
+        },
+        {
+          fullName: "fresh/second",
+          description: "Fresh but lower-ranked memory experiment",
+          language: "Python",
+          stargazersCount: 10,
+          pushedAt: "2026-08-01",
+          url: "https://github.com/fresh/second",
+          searchQuery: "agent-memory",
+        },
+      ],
+      trendingFetchSuccess: true,
+      snapshotMarkers: { trendingNames: [], starCounts: {} },
+    };
+
+    expect(extractTrendingCandidates(data, 1)[0]?.title).toBe("quality/first");
   });
 });
 
@@ -212,6 +275,35 @@ describe("extractTrendingCandidates", () => {
 // ---------------------------------------------------------------------------
 
 describe("extractRepoCandidates", () => {
+  it("uses issue creation time instead of ordinary update activity", () => {
+    const fetch = {
+      cfg: { id: "claude-code", repo: "anthropics/claude-code", name: "Claude Code" },
+      issues: [
+        {
+          number: 76653,
+          title: "Remote Control localhost proxy request",
+          state: "open",
+          user: { login: "user" },
+          labels: [],
+          created_at: "2026-07-11T00:00:00Z",
+          updated_at: "2026-08-01T14:30:19Z",
+          comments: 5,
+          reactions: { "+1": 10 },
+          body: "Feature request for subscription users on macOS",
+          html_url: "https://github.com/anthropics/claude-code/issues/76653",
+        },
+      ],
+      prs: [],
+      releases: [],
+    };
+
+    const [candidate] = extractRepoCandidates(fetch as unknown as RepoFetch, DEFAULT_CONFIG, 20);
+
+    expect(candidate?.eventTime).toBe("2026-07-11T00:00:00Z");
+    expect(candidate?.timeEvidence).toBe("api-date");
+    expect(candidate?.rawSummary).toContain("Updated: 2026-08-01T14:30:19Z");
+  });
+
   it("extracts more items for primary tools", () => {
     const fetch = {
       cfg: { id: "claude-code", repo: "anthropics/claude-code", name: "Claude Code" },
@@ -256,6 +348,49 @@ describe("extractRepoCandidates", () => {
     };
     const result = extractRepoCandidates(fetch as unknown as RepoFetch, DEFAULT_CONFIG, 20);
     expect(result.length).toBeLessThanOrEqual(5);
+  });
+
+  it("excludes nightly releases that are not stable user-facing updates", () => {
+    const fetch = {
+      cfg: { id: "qwen-code", repo: "QwenLM/qwen-code", name: "Qwen Code" },
+      issues: [],
+      prs: [],
+      releases: [
+        {
+          tag_name: "v0.21.2-nightly.20260801",
+          name: "Nightly build",
+          body: "Internal hook changes",
+          published_at: "2026-08-01T00:00:00Z",
+        },
+      ],
+    };
+
+    expect(extractRepoCandidates(fetch as unknown as RepoFetch, DEFAULT_CONFIG, 20)).toEqual([]);
+  });
+
+  it("does not promote fresh primary-tool issues with no independent signal", () => {
+    const fetch = {
+      cfg: { id: "codex", repo: "openai/codex", name: "OpenAI Codex" },
+      issues: [
+        {
+          number: 1,
+          title: "A newly filed local-only bug",
+          state: "open",
+          user: { login: "user" },
+          labels: [],
+          created_at: "2026-08-01T00:00:00Z",
+          updated_at: "2026-08-01T00:00:00Z",
+          comments: 0,
+          reactions: { "+1": 0 },
+          body: "Unconfirmed report",
+          html_url: "https://github.com/openai/codex/issues/1",
+        },
+      ],
+      prs: [],
+      releases: [],
+    };
+
+    expect(extractRepoCandidates(fetch as unknown as RepoFetch, DEFAULT_CONFIG, 20)).toEqual([]);
   });
 });
 
@@ -335,6 +470,37 @@ describe("extractArxivCandidates", () => {
     expect(result[0]!.infoType).toBe("paper");
     expect(result[0]!.officialConfirmed).toBe(true);
   });
+
+  it("prioritizes project-relevant RAG and agent-memory papers over unrelated newer papers", () => {
+    const paper = (id: string, title: string, summary: string, published: string) => ({
+      id: `http://arxiv.org/abs/${id}`,
+      title,
+      summary,
+      authors: ["Alice"],
+      published,
+      updated: published,
+      categories: ["cs.AI"],
+      url: `http://arxiv.org/abs/${id}`,
+      pdfUrl: `http://arxiv.org/pdf/${id}`,
+    });
+    const data = {
+      papers: [
+        paper("2607.3", "Humanoid Dodgeball Control", "Reinforcement learning for robots", "2026-07-31"),
+        paper("2607.2", "Mathematical Dualities", "A theorem in mathematical physics", "2026-07-30"),
+        paper(
+          "2607.1",
+          "Evaluating Long-Term Memory for Retrieval-Augmented Agents",
+          "RAG evaluation for persistent agent memory and knowledge bases",
+          "2026-07-29",
+        ),
+      ],
+      fetchSuccess: true,
+    };
+
+    const result = extractArxivCandidates(data, 1);
+
+    expect(result[0]?.title).toBe("Evaluating Long-Term Memory for Retrieval-Augmented Agents");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -386,6 +552,18 @@ describe("extractCommunityCandidates", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildBalancedPool", () => {
+  it("rejects malformed candidates instead of silently misclassifying them", () => {
+    const malformed = makeCandidate({
+      id: "https://example.com/malformed",
+      sourceUrl: "https://example.com/malformed",
+      subject: undefined as unknown as string,
+    });
+
+    expect(() => buildBalancedPool([malformed], DEFAULT_CONFIG)).toThrowError(
+      /Invalid candidate.*subject.*https:\/\/example\.com\/malformed/,
+    );
+  });
+
   it("includes non-GitHub sources even when GitHub dominates input", () => {
     // Create 50 GitHub candidates (more than total pool limit)
     const ghCandidates = Array.from({ length: 50 }, (_, i) =>
@@ -482,6 +660,91 @@ describe("buildBalancedPool", () => {
   it("returns empty for empty input", () => {
     expect(buildBalancedPool([], DEFAULT_CONFIG)).toHaveLength(0);
   });
+
+  it("keeps focus-topic search results in their own larger category", () => {
+    const searchCandidates = Array.from({ length: 14 }, (_, index) =>
+      makeCandidate({
+        id: `https://github.com/focus/repo-${index}`,
+        sourceUrl: `https://github.com/focus/repo-${index}`,
+        sourceName: `GitHub Search (${index % 2 === 0 ? "rag" : "agent-memory"})`,
+        subject: "focus",
+      }),
+    );
+
+    expect(buildBalancedPool(searchCandidates, DEFAULT_CONFIG)).toHaveLength(12);
+  });
+
+  it("excludes ordinary Claw candidates from the personal report", () => {
+    const clawCandidates = Array.from({ length: 8 }, (_, index) =>
+      makeCandidate({
+        id: `https://github.com/example/zero-claw-${index}`,
+        sourceUrl: `https://github.com/example/zero-claw-${index}`,
+        sourceName: "GitHub",
+        subject: "ZeroClaw",
+      }),
+    );
+
+    expect(buildBalancedPool(clawCandidates, DEFAULT_CONFIG)).toHaveLength(0);
+  });
+
+  it("drops Anthropic-model-only candidates while retaining Claude Code client candidates", () => {
+    const candidates = [
+      makeCandidate({
+        id: "opus",
+        title: "Opus 4.8 emits stray tokens",
+        subject: "Claude Code",
+        sourceUrl: "https://github.com/anthropics/claude-code/issues/opus",
+      }),
+      makeCandidate({
+        id: "client",
+        title: "Claude Code client loses local transcript text",
+        subject: "Claude Code",
+        sourceUrl: "https://github.com/anthropics/claude-code/issues/client",
+      }),
+    ];
+
+    expect(buildBalancedPool(candidates, DEFAULT_CONFIG).map((candidate) => candidate.id)).toEqual([
+      "client",
+    ]);
+  });
+
+  it("drops price-performance news for a model backend the user does not use", () => {
+    const priceNews = makeCandidate({
+      id: "price",
+      title: "Advancing the price performance frontier with GPT-5.6",
+      subject: "OpenAI",
+      sourceName: "OpenAI",
+      sourceUrl: "https://openai.com/index/price-performance",
+    });
+    const chinesePriceNews = makeCandidate({
+      id: "price-zh",
+      title: "Claude Code 成本下调",
+      subject: "Anthropic",
+      sourceName: "Anthropic",
+      sourceUrl: "https://www.anthropic.com/news/lower-costs",
+    });
+
+    expect(buildBalancedPool([priceNews, chinesePriceNews], DEFAULT_CONFIG)).toEqual([]);
+  });
+
+  it("does not promote unshipped GitHub issues or PRs into a personal report", () => {
+    const issue = makeCandidate({
+      id: "issue",
+      infoType: "issue",
+      subject: "OpenAI Codex",
+      sourceUrl: "https://github.com/openai/codex/issues/1",
+    });
+    const release = makeCandidate({
+      id: "release",
+      infoType: "release",
+      subject: "OpenAI Codex",
+      sourceUrl: "https://github.com/openai/codex/releases/tag/v1",
+    });
+
+    expect(buildBalancedPool([issue, release], DEFAULT_CONFIG).map((candidate) => candidate.id)).toEqual([
+      "release",
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -544,6 +807,78 @@ describe("mergeCandidates", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Coverage and selection audit
+// ---------------------------------------------------------------------------
+
+describe("filterCandidatesByCoverage", () => {
+  it("excludes an old issue that was merely updated inside the report window", () => {
+    const oldIssue = {
+      ...makeCandidate({
+        id: "https://github.com/anthropics/claude-code/issues/76653",
+        sourceUrl: "https://github.com/anthropics/claude-code/issues/76653",
+        eventTime: "2026-07-11T00:00:00Z",
+        infoType: "issue",
+      }),
+      additionalSources: [],
+    };
+    const currentRelease = {
+      ...makeCandidate({
+        id: "release::openai/codex::v1",
+        sourceUrl: "https://github.com/openai/codex/releases/tag/v1",
+        eventTime: "2026-07-31T00:00:00Z",
+        infoType: "release",
+      }),
+      additionalSources: [],
+    };
+
+    expect(
+      filterCandidatesByCoverage(
+        [oldIssue, currentRelease],
+        "2026-07-27T12:40:08Z",
+        "2026-08-01T15:00:00Z",
+      ).map((item) => item.id),
+    ).toEqual(["release::openai/codex::v1"]);
+  });
+});
+
+describe("buildSelectionAudit", () => {
+  it("records every candidate with its kept or excluded reason", () => {
+    const candidates: MergedCandidate[] = [
+      { ...makeCandidate({ id: "kept", title: "Useful RAG update" }), additionalSources: [] },
+      { ...makeCandidate({ id: "dropped", title: "Unreleased feature request" }), additionalSources: [] },
+    ];
+    const filterResult: FilterResult = {
+      kept: [
+        {
+          title: "Useful RAG update",
+          keepIds: ["1"],
+          mergedIds: [],
+          topic: "RAG",
+          relevance: "Direct project use",
+          confidence: "high",
+          reason: "Can be applied now",
+          needsContext: false,
+        },
+      ],
+      excluded: [{ id: "2", reason: "Not shipped and no current action" }],
+    };
+
+    const audit = buildSelectionAudit(candidates, filterResult);
+
+    expect(audit.decisionCounts).toEqual({ kept: 1, excluded: 1, unclassified: 0 });
+    expect(audit.candidates).toEqual([
+      expect.objectContaining({ candidateId: 1, title: "Useful RAG update", decision: "kept" }),
+      expect.objectContaining({
+        candidateId: 2,
+        title: "Unreleased feature request",
+        decision: "excluded",
+        reason: "Not shipped and no current action",
+      }),
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // selectFinalItems
 // ---------------------------------------------------------------------------
 
@@ -587,6 +922,21 @@ describe("buildFilterPrompt", () => {
     expect(prompt).toContain("纯 UI");
     expect(prompt).toContain("宁缺毋滥");
     expect(prompt).toContain("20");
+  });
+
+  it("excludes subscription-only and unshipped features when the user does not use Anthropic services", () => {
+    const prompt = buildFilterPrompt([], DEFAULT_CONFIG, "2026-07-25", "2026-07-27");
+
+    expect(prompt).toContain("依赖 Anthropic 账号或订阅");
+    expect(prompt).toContain("用户未明确确认使用 Remote Control、本地代理");
+    expect(prompt).toContain("尚未交付的功能请求");
+  });
+
+  it("keeps the full-report threshold broader than the five-minute threshold", () => {
+    const prompt = buildFilterPrompt([], DEFAULT_CONFIG, "2026-07-25", "2026-07-27");
+
+    expect(prompt).toContain("优先形成 12～16 条");
+    expect(prompt).toContain("不得把五分钟概览的门槛套用到完整报告");
   });
 });
 
@@ -1796,5 +2146,347 @@ describe("buildFilterEventUrlMap", () => {
     expect(map.get("filter-event-1")).toContain("https://a.com");
     expect(map.get("filter-event-1")).toContain("https://extra.com");
     expect(map.get("filter-event-2")).toContain("https://b.com");
+  });
+});
+
+describe("bindReportEventsToFilterSources", () => {
+  it("repairs a copied filterEventId when the event URLs identify exactly one Stage 1 event", () => {
+    const report = {
+      toolStatus: { codex: "本期无重要更新", "claude-code": "本期无重要更新" },
+      events: [
+        {
+          filterEventId: "filter-event-1",
+          id: "evt-1",
+          title: "Slopsquatting",
+          topic: "安全",
+          eventTime: "2026-07-28T00:00:00Z",
+          updateKind: "new" as const,
+          status: "社区信号" as const,
+          quick: { what: "w", why: "y", impact: "i", action: "a" },
+          full: { background: "b", evidence: "e", analysis: "a", impact: "i", action: "a" },
+          candidateIds: ["https://dev.to/security"],
+          sources: [{ name: "Dev.to", url: "https://dev.to/security" }],
+        },
+      ],
+      fiveMinuteBrief: { topicGroups: [{ name: "安全", eventIds: ["evt-1"] }] },
+      fullReport: { topicGroups: [{ name: "安全", eventIds: ["evt-1"] }] },
+      coverageFrom: "2026-07-27T00:00:00Z",
+      coverageTo: "2026-08-01T00:00:00Z",
+      generatedAt: "2026-08-01T00:00:00Z",
+    };
+    const map = new Map([
+      ["filter-event-1", new Set(["https://github.com/opencode/release"])],
+      ["filter-event-2", new Set(["https://dev.to/security"])],
+    ]);
+
+    bindReportEventsToFilterSources(report, map);
+
+    expect(report.events[0]?.filterEventId).toBe("filter-event-2");
+  });
+
+  it("does not guess when URLs span multiple Stage 1 events", () => {
+    const event = {
+      filterEventId: "filter-event-1",
+      candidateIds: ["https://a.example", "https://b.example"],
+      sources: [{ name: "A", url: "https://a.example" }],
+    } as ReportEvent;
+    const report = { events: [event] } as PersonalReportJson;
+    const map = new Map([
+      ["filter-event-1", new Set(["https://a.example"])],
+      ["filter-event-2", new Set(["https://b.example"])],
+    ]);
+
+    bindReportEventsToFilterSources(report, map);
+
+    expect(event.filterEventId).toBe("filter-event-1");
+  });
+});
+
+describe("canonicalizeReportSourceUrls", () => {
+  it("maps an equivalent ArXiv https URL back to the exact kept candidate URL", () => {
+    const event = {
+      candidateIds: ["https://arxiv.org/abs/2607.28591v1"],
+      sources: [{ name: "ArXiv", url: "https://arxiv.org/abs/2607.28591v1" }],
+    } as ReportEvent;
+
+    canonicalizeReportSourceUrls(
+      { events: [event] } as PersonalReportJson,
+      new Set(["http://arxiv.org/abs/2607.28591v1"]),
+    );
+
+    expect(event.candidateIds).toEqual(["http://arxiv.org/abs/2607.28591v1"]);
+    expect(event.sources[0]?.url).toBe("http://arxiv.org/abs/2607.28591v1");
+  });
+
+  it("does not rewrite a URL that has no kept-candidate equivalent", () => {
+    const event = {
+      candidateIds: ["https://example.com/fabricated"],
+      sources: [{ name: "Web", url: "https://example.com/fabricated" }],
+    } as ReportEvent;
+
+    canonicalizeReportSourceUrls(
+      { events: [event] } as PersonalReportJson,
+      new Set(["https://example.com/real"]),
+    );
+
+    expect(event.candidateIds).toEqual(["https://example.com/fabricated"]);
+  });
+});
+
+describe("capFiveMinuteBrief", () => {
+  it("preserves topic and event order while enforcing the configured global limit", () => {
+    const brief = {
+      topicGroups: [
+        { name: "A", eventIds: ["evt-1", "evt-2", "evt-3", "evt-4"] },
+        { name: "B", eventIds: ["evt-5", "evt-6", "evt-7"] },
+      ],
+    };
+
+    capFiveMinuteBrief(brief, 6);
+
+    expect(brief.topicGroups).toEqual([
+      { name: "A", eventIds: ["evt-1", "evt-2", "evt-3", "evt-4"] },
+      { name: "B", eventIds: ["evt-5", "evt-6"] },
+    ]);
+  });
+});
+
+describe("callLlmJsonWithRepair", () => {
+  it("budgets enough output for a 12-16 item full report", () => {
+    expect(REPORT_TOKENS).toBeGreaterThanOrEqual(16384);
+  });
+
+  it("returns valid JSON without a repair call", async () => {
+    const call = vi.fn().mockResolvedValueOnce('{"kept":[],"excluded":[]}');
+
+    await expect(callLlmJsonWithRepair<FilterResult>("filter prompt", 100, call)).resolves.toEqual({
+      kept: [],
+      excluded: [],
+    });
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes one bounded format-repair call after invalid JSON", async () => {
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce('{"kept":[}')
+      .mockResolvedValueOnce('{"kept":[],"excluded":[]}');
+
+    await expect(callLlmJsonWithRepair<FilterResult>("filter prompt", 100, call)).resolves.toEqual({
+      kept: [],
+      excluded: [],
+    });
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(call.mock.calls[1]?.[0]).toContain("只修复 JSON 语法和转义");
+  });
+
+  it("fails after the single repair attempt is still invalid", async () => {
+    const call = vi.fn().mockResolvedValue('{"kept":[}');
+
+    await expect(callLlmJsonWithRepair<FilterResult>("filter prompt", 100, call)).rejects.toBeInstanceOf(
+      SyntaxError,
+    );
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("normalizeFilterResultAssignments", () => {
+  it("keeps the first valid event assignment and removes kept/excluded overlap", () => {
+    const result: FilterResult = {
+      kept: [
+        {
+          title: "First",
+          keepIds: ["1", "2"],
+          mergedIds: [],
+          topic: "A",
+          relevance: "r",
+          confidence: "high",
+          reason: "r",
+          needsContext: false,
+        },
+        {
+          title: "Second",
+          keepIds: ["2", "3"],
+          mergedIds: [],
+          topic: "B",
+          relevance: "r",
+          confidence: "medium",
+          reason: "r",
+          needsContext: false,
+        },
+      ],
+      excluded: [
+        { id: "1", reason: "conflict" },
+        { id: "4", reason: "not useful" },
+      ],
+    };
+
+    expect(normalizeFilterResultAssignments(result, 4)).toEqual({
+      kept: [
+        expect.objectContaining({ title: "First", keepIds: ["1", "2"] }),
+        expect.objectContaining({ title: "Second", keepIds: ["3"] }),
+      ],
+      excluded: [{ id: "4", reason: "not useful" }],
+    });
+  });
+
+  it("leaves invalid IDs for strict validation instead of hiding them", () => {
+    const result: FilterResult = {
+      kept: [
+        {
+          title: "Invalid",
+          keepIds: ["99"],
+          mergedIds: [],
+          topic: "A",
+          relevance: "r",
+          confidence: "high",
+          reason: "r",
+          needsContext: false,
+        },
+      ],
+      excluded: [],
+    };
+
+    const normalized = normalizeFilterResultAssignments(result, 4);
+
+    expect(validateFilterResult(normalized, 4).ok).toBe(false);
+  });
+});
+
+describe("five-minute eligibility", () => {
+  it("identifies non-primary releases and non-backend benchmark articles", () => {
+    const candidates: MergedCandidate[] = [
+      {
+        ...makeCandidate({ infoType: "release", subject: "GitHub Copilot CLI" }),
+        additionalSources: [],
+      },
+      {
+        ...makeCandidate({
+          id: "codex",
+          sourceUrl: "https://github.com/openai/codex/releases/tag/v1",
+          infoType: "release",
+          subject: "OpenAI Codex",
+        }),
+        additionalSources: [],
+      },
+      {
+        ...makeCandidate({
+          id: "benchmark",
+          title: "How two settings tripled our ARC-AGI-3 scores",
+          subject: "OpenAI",
+          sourceName: "OpenAI",
+          sourceUrl: "https://openai.com/index/arc-agi-settings",
+          infoType: "article",
+        }),
+        additionalSources: [],
+      },
+    ];
+    const filterResult: FilterResult = {
+      kept: [
+        {
+          title: "Copilot release",
+          keepIds: ["1"],
+          mergedIds: [],
+          topic: "CLI",
+          relevance: "reference",
+          confidence: "medium",
+          reason: "reference",
+          needsContext: false,
+        },
+        {
+          title: "Codex release",
+          keepIds: ["2"],
+          mergedIds: [],
+          topic: "CLI",
+          relevance: "direct",
+          confidence: "high",
+          reason: "direct",
+          needsContext: false,
+        },
+        {
+          title: "ARC benchmark result",
+          keepIds: ["3"],
+          mergedIds: [],
+          topic: "Evaluation",
+          relevance: "indirect",
+          confidence: "medium",
+          reason: "reference",
+          needsContext: false,
+        },
+      ],
+      excluded: [],
+    };
+
+    expect(buildFiveMinuteExcludedFilterEventIds(candidates, filterResult, DEFAULT_CONFIG)).toEqual(
+      new Set(["filter-event-1", "filter-event-3"]),
+    );
+  });
+
+  it("keeps transferable evaluation guides eligible for the overview", () => {
+    const candidates: MergedCandidate[] = [
+      {
+        ...makeCandidate({
+          title: "Build a reproducible LLM benchmark harness",
+          subject: "Independent Engineer",
+          sourceName: "Dev.to",
+          sourceUrl: "https://dev.to/example/reproducible-benchmark",
+          infoType: "article",
+        }),
+        additionalSources: [],
+      },
+    ];
+    const filterResult: FilterResult = {
+      kept: [
+        {
+          title: "Reproducible evaluation guide",
+          keepIds: ["1"],
+          mergedIds: [],
+          topic: "Evaluation",
+          relevance: "direct",
+          confidence: "high",
+          reason: "transferable engineering method",
+          needsContext: false,
+        },
+      ],
+      excluded: [],
+    };
+
+    expect(buildFiveMinuteExcludedFilterEventIds(candidates, filterResult, DEFAULT_CONFIG)).toEqual(
+      new Set(),
+    );
+  });
+
+  it("removes ineligible events and fills the brief to five from the full report", () => {
+    const event = (id: string, filterEventId: string) => ({ id, filterEventId }) as ReportEvent;
+    const report = {
+      events: [
+        event("evt-1", "filter-event-1"),
+        event("evt-2", "filter-event-2"),
+        event("evt-3", "filter-event-3"),
+        event("evt-4", "filter-event-4"),
+        event("evt-5", "filter-event-5"),
+        event("evt-6", "filter-event-6"),
+        event("evt-7", "filter-event-7"),
+      ],
+      fiveMinuteBrief: {
+        topicGroups: [{ name: "CLI", eventIds: ["evt-1", "evt-2", "evt-3", "evt-4", "evt-5"] }],
+      },
+      fullReport: {
+        topicGroups: [
+          { name: "CLI", eventIds: ["evt-1", "evt-2"] },
+          { name: "RAG", eventIds: ["evt-3", "evt-4", "evt-5", "evt-6", "evt-7"] },
+        ],
+      },
+    } as PersonalReportJson;
+
+    filterAndFillFiveMinuteBrief(report, new Set(["filter-event-1", "filter-event-2"]), 6, 5);
+
+    expect(report.fiveMinuteBrief.topicGroups.flatMap((group) => group.eventIds)).toEqual([
+      "evt-3",
+      "evt-4",
+      "evt-5",
+      "evt-6",
+      "evt-7",
+    ]);
   });
 });

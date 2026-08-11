@@ -96,6 +96,25 @@ export interface FilterResult {
   excluded: Array<{ id: string; reason: string }>;
 }
 
+export interface SelectionAudit {
+  candidateCount: number;
+  sourceCounts: Record<string, number>;
+  decisionCounts: { kept: number; excluded: number; unclassified: number };
+  candidates: Array<{
+    candidateId: number;
+    title: string;
+    subject: string;
+    sourceName: string;
+    sourceUrl: string;
+    eventTime: string;
+    infoType: InfoType;
+    decision: "kept" | "excluded" | "unclassified";
+    reason: string;
+    topic?: string;
+    confidence?: FilterResultItem["confidence"];
+  }>;
+}
+
 export interface ReportEvent {
   /** Stable ID assigned by Stage 1 filter, binding this event to its source candidates. */
   filterEventId?: string;
@@ -239,6 +258,7 @@ export const CATEGORY_LIMITS = {
   codex: 8,
   claudeCode: 8,
   otherCli: 6,
+  claw: 0,
   webOpenai: 4,
   webAnthropic: 4,
   hn: 5,
@@ -246,6 +266,7 @@ export const CATEGORY_LIMITS = {
   hf: 3,
   ph: 3,
   trending: 3,
+  focusSearch: 12,
   community: 3,
   skills: 3,
 } as const;
@@ -291,19 +312,25 @@ function extractGitHubItemCandidates(
     title: `#${item.number} ${item.title}`,
     subject: cfg.name,
     summary: truncate(item.body ?? "", 300),
-    eventTime: item.updated_at ?? item.created_at ?? "",
-    timeEvidence: "git-commit" as TimeEvidence,
+    eventTime: item.created_at,
+    timeEvidence: "api-date" as TimeEvidence,
     sourceName: "GitHub",
     sourceUrl: item.html_url,
     infoType,
     officialConfirmed: false,
     relevanceDimensions: [],
-    rawSummary: `State: ${item.state}, Comments: ${item.comments}, 👍: ${item.reactions?.["+1"] ?? 0}`,
+    rawSummary:
+      `State: ${item.state}, Comments: ${item.comments}, 👍: ${item.reactions?.["+1"] ?? 0}, ` +
+      `Created: ${item.created_at}, Updated: ${item.updated_at}`,
   }));
 }
 
 function extractReleaseCandidates(releases: GitHubRelease[], cfg: RepoConfig): CandidateItem[] {
-  return releases.map((r) => ({
+  const isStableRelease = (release: GitHubRelease): boolean => {
+    const text = `${release.tag_name} ${release.name}`;
+    return !/(?:^|[\s._-])(nightly|alpha|beta|rc|canary|dev)(?:[\s._-]|$)/i.test(text);
+  };
+  return releases.filter(isStableRelease).map((r) => ({
     id: `release::${cfg.repo}::${r.tag_name}`,
     title: `${cfg.name} ${r.tag_name}`,
     subject: cfg.name,
@@ -327,21 +354,20 @@ export function extractRepoCandidates(
   const isPrimary = config.primaryTools.includes(fetch.cfg.id);
   const limit = isPrimary ? 8 : Math.min(maxItems, 5);
 
-  const issues = extractGitHubItemCandidates(fetch.issues, fetch.cfg, "issue");
-  const prs = extractGitHubItemCandidates(fetch.prs, fetch.cfg, "pr");
+  const hasIndependentSignal = (item: GitHubItem): boolean =>
+    item.comments >= 3 || (item.reactions?.["+1"] ?? 0) >= 3;
+  const issues = extractGitHubItemCandidates(fetch.issues.filter(hasIndependentSignal), fetch.cfg, "issue");
+  const prs = extractGitHubItemCandidates(fetch.prs.filter(hasIndependentSignal), fetch.cfg, "pr");
   const releases = extractReleaseCandidates(fetch.releases, fetch.cfg);
 
   const all = sortByTime([...releases, ...issues, ...prs]);
 
-  // For primary tools, take more; for others, only high-engagement items
+  // Primary tools get a larger cap, but a newly filed issue alone is not yet a
+  // personal-impact signal. Releases remain eligible without engagement.
   if (isPrimary) {
     return all.slice(0, limit);
   }
-  // Secondary tools: prioritize releases and high-engagement items
-  const highEngagement = all.filter(
-    (c) => c.infoType === "release" || (c.rawSummary.includes("👍: ") && !c.rawSummary.includes("👍: 0")),
-  );
-  return (highEngagement.length > 0 ? highEngagement : all).slice(0, limit);
+  return all.slice(0, limit);
 }
 
 // ---------------------------------------------------------------------------
@@ -399,24 +425,34 @@ export function extractWebCandidates(results: WebFetchResult[], maxItems = 5): C
 // ---------------------------------------------------------------------------
 
 export function extractTrendingCandidates(data: TrendingData, maxItems = 5): CandidateItem[] {
-  // trendingRepos are already filtered by the snapshot comparison in trending.ts
-  const fromTrending = data.trendingRepos.map((r) => ({
-    id: r.url,
-    title: r.fullName,
-    subject: r.fullName.split("/")[0] ?? r.fullName,
-    summary: r.description || "No description",
-    eventTime: new Date().toISOString(),
-    timeEvidence: "snapshot" as TimeEvidence,
-    sourceName: "GitHub Trending",
-    sourceUrl: r.url,
-    infoType: "trend" as InfoType,
-    officialConfirmed: false,
-    relevanceDimensions: [],
-    rawSummary: `Language: ${r.language}, Stars: ${r.totalStars.toLocaleString()}, Today: +${r.todayStars}`,
-  }));
+  // Activity-only Trending rankings are intentionally excluded from the personal
+  // report. They measure popularity, while topic searches can surface concrete
+  // projects relevant to RAG, memory, agents, evaluation, and similar work.
+  const grouped = new Map<string, TrendingData["searchRepos"]>();
+  for (const repo of data.searchRepos) {
+    const group = grouped.get(repo.searchQuery) ?? [];
+    group.push(repo);
+    grouped.set(repo.searchQuery, group);
+  }
 
-  // Search repos are not snapshot-filtered; take top by stars
-  const fromSearch = data.searchRepos.slice(0, 3).map((r) => ({
+  const diverseSearchRepos: TrendingData["searchRepos"] = [];
+  // GitHub Search already returns each query in relevance/star ranking order.
+  // Preserve that ranking rather than turning recent push activity into the
+  // selection signal again.
+  const queues = [...grouped.values()];
+  for (let index = 0; diverseSearchRepos.length < maxItems; index++) {
+    let added = false;
+    for (const queue of queues) {
+      const repo = queue[index];
+      if (!repo) continue;
+      diverseSearchRepos.push(repo);
+      added = true;
+      if (diverseSearchRepos.length >= maxItems) break;
+    }
+    if (!added) break;
+  }
+
+  return diverseSearchRepos.map((r) => ({
     id: r.url,
     title: r.fullName,
     subject: r.fullName.split("/")[0] ?? r.fullName,
@@ -425,13 +461,11 @@ export function extractTrendingCandidates(data: TrendingData, maxItems = 5): Can
     timeEvidence: "api-date" as TimeEvidence,
     sourceName: `GitHub Search (${r.searchQuery})`,
     sourceUrl: r.url,
-    infoType: "trend" as InfoType,
+    infoType: "product" as InfoType,
     officialConfirmed: false,
     relevanceDimensions: [],
-    rawSummary: `Stars: ${r.stargazersCount.toLocaleString()}, Query: ${r.searchQuery}`,
+    rawSummary: `First-time focus-topic discovery; Query: ${r.searchQuery}; Language: ${r.language ?? "unknown"}; Description: ${r.description ?? ""}`,
   }));
-
-  return sortByTime([...fromTrending, ...fromSearch]).slice(0, maxItems);
 }
 
 // ---------------------------------------------------------------------------
@@ -481,7 +515,35 @@ export function extractPhCandidates(data: PhData, maxItems = 3): CandidateItem[]
 // ---------------------------------------------------------------------------
 
 export function extractArxivCandidates(data: ArxivData, maxItems = 5): CandidateItem[] {
-  return data.papers.slice(0, maxItems).map((p) => ({
+  const focusKeywords = [
+    "retrieval-augmented",
+    "retrieval augmented",
+    "rag",
+    "knowledge base",
+    "knowledge graph",
+    "graphrag",
+    "long-term memory",
+    "long term memory",
+    "persistent memory",
+    "agent memory",
+    "context engineering",
+    "agent workflow",
+    "tool calling",
+    "evaluation",
+    "observability",
+    "multimodal",
+    "time series",
+    "diagnosis",
+  ];
+  const score = (paper: ArxivData["papers"][number]): number => {
+    const text = `${paper.title} ${paper.summary}`.toLowerCase();
+    return focusKeywords.reduce((total, keyword) => total + (text.includes(keyword) ? 1 : 0), 0);
+  };
+  const papers = [...data.papers]
+    .sort((a, b) => score(b) - score(a) || b.published.localeCompare(a.published))
+    .slice(0, maxItems);
+
+  return papers.map((p) => ({
     id: p.url,
     title: p.title,
     subject: p.authors.slice(0, 3).join(", "),
@@ -548,17 +610,15 @@ function categorizeSource(c: CandidateItem, primaryTools: string[]): string {
   const src = c.sourceName.toLowerCase();
   const subj = c.subject.toLowerCase();
 
+  if (subj.includes("claw")) return "claw";
   if (src === "hacker news") return "hn";
   if (src === "arxiv") return "arxiv";
   if (src === "hugging face") return "hf";
   if (src === "product hunt") return "ph";
   if (src === "dev.to" || src === "lobste.rs") return "community";
-  if (src.includes("trending") || src.includes("search")) return "trending";
+  if (src.includes("search")) return "focusSearch";
+  if (src.includes("trending")) return "trending";
   if (src.includes("anthropic") && src.includes("skills")) return "skills";
-
-  // Web sources
-  if (subj.includes("openai") || src.includes("openai")) return "webOpenai";
-  if (subj.includes("anthropic") || subj.includes("claude")) return "webAnthropic";
 
   // GitHub repos — classify by primary tool
   for (const tool of primaryTools) {
@@ -567,7 +627,40 @@ function categorizeSource(c: CandidateItem, primaryTools: string[]): string {
       return "claudeCode";
   }
 
+  // Web sources
+  if (subj.includes("openai") || src.includes("openai")) return "webOpenai";
+  if (subj.includes("anthropic") || subj.includes("claude")) return "webAnthropic";
+
   return "otherCli";
+}
+
+function assertCandidateContract(c: CandidateItem): void {
+  for (const field of ["sourceName", "subject"] as const) {
+    if (typeof c[field] !== "string" || !c[field].trim()) {
+      throw new Error(`Invalid candidate ${c.id}: missing ${field} (${c.sourceUrl})`);
+    }
+  }
+}
+
+function isCandidateApplicable(c: CandidateItem, config: PersonalReportConfig): boolean {
+  if (c.infoType === "issue" || c.infoType === "pr") return false;
+
+  const text = `${c.title} ${c.summary} ${c.rawSummary}`.toLowerCase();
+  const publisher = `${c.sourceName} ${c.subject}`.toLowerCase();
+  const backend = config.modelBackend.toLowerCase();
+  if (
+    /(?:\b(?:price|pricing|cost)\b|价格|成本)/i.test(text) &&
+    (publisher.includes("openai") || publisher.includes("anthropic")) &&
+    !publisher.includes(backend)
+  ) {
+    return false;
+  }
+
+  if (config.usesAnthropicAccount || config.usesAnthropicSubscription) return true;
+
+  const anthropicModelOnly =
+    /\b(opus(?:\s*\d+(?:\.\d+)?)?|sonnet|haiku|claude\.ai|anthropic api|claude api)\b/i;
+  return !anthropicModelOnly.test(text);
 }
 
 /**
@@ -584,6 +677,8 @@ export function buildBalancedPool(
   // Group by category
   const groups = new Map<string, CandidateItem[]>();
   for (const c of candidates) {
+    assertCandidateContract(c);
+    if (!isCandidateApplicable(c, config)) continue;
     const cat = categorizeSource(c, config.primaryTools);
     if (!groups.has(cat)) groups.set(cat, []);
     groups.get(cat)!.push(c);
@@ -642,6 +737,72 @@ export function mergeCandidates(candidates: CandidateItem[]): MergedCandidate[] 
   return [...byKey.values()];
 }
 
+export function filterCandidatesByCoverage(
+  candidates: MergedCandidate[],
+  coverageFrom: string,
+  coverageTo: string,
+): MergedCandidate[] {
+  const fromMs = Date.parse(coverageFrom);
+  const toMs = Date.parse(coverageTo);
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || fromMs > toMs) {
+    throw new Error(`Invalid coverage window: ${coverageFrom} .. ${coverageTo}`);
+  }
+
+  return candidates.filter((candidate) => {
+    const eventMs = Date.parse(candidate.eventTime);
+    return Number.isFinite(eventMs) && eventMs >= fromMs && eventMs <= toMs;
+  });
+}
+
+export function buildSelectionAudit(
+  candidates: MergedCandidate[],
+  filterResult: FilterResult,
+): SelectionAudit {
+  const keptById = new Map<string, FilterResultItem>();
+  for (const item of filterResult.kept) {
+    for (const rawId of [...item.keepIds, ...(item.mergedIds ?? [])]) {
+      const id = normalizeCandidateId(rawId);
+      if (id) keptById.set(id, item);
+    }
+  }
+  const excludedById = new Map<string, string>();
+  for (const item of filterResult.excluded ?? []) {
+    const id = normalizeCandidateId(item.id);
+    if (id) excludedById.set(id, item.reason);
+  }
+
+  const sourceCounts: Record<string, number> = {};
+  const decisionCounts = { kept: 0, excluded: 0, unclassified: 0 };
+  const audited = candidates.map((candidate, index) => {
+    sourceCounts[candidate.sourceName] = (sourceCounts[candidate.sourceName] ?? 0) + 1;
+    const candidateId = index + 1;
+    const id = String(candidateId);
+    const kept = keptById.get(id);
+    const excludedReason = excludedById.get(id);
+    const decision: "kept" | "excluded" | "unclassified" = kept
+      ? "kept"
+      : excludedReason
+        ? "excluded"
+        : "unclassified";
+    decisionCounts[decision]++;
+
+    return {
+      candidateId,
+      title: candidate.title,
+      subject: candidate.subject,
+      sourceName: candidate.sourceName,
+      sourceUrl: candidate.sourceUrl,
+      eventTime: candidate.eventTime,
+      infoType: candidate.infoType,
+      decision,
+      reason: kept?.reason ?? excludedReason ?? "Stage 1 did not classify this candidate",
+      ...(kept ? { topic: kept.topic, confidence: kept.confidence } : {}),
+    };
+  });
+
+  return { candidateCount: candidates.length, sourceCounts, decisionCounts, candidates: audited };
+}
+
 /**
  * Normalize URL for dedup: strip trailing slashes, fragments, common query params.
  */
@@ -670,6 +831,25 @@ export function selectFinalItems(merged: MergedCandidate[], limit: number): Merg
 // ---------------------------------------------------------------------------
 
 const FILTER_TOKENS = 6144;
+export const REPORT_TOKENS = 16384;
+
+type LlmCaller = (prompt: string, maxTokens: number) => Promise<string>;
+
+export async function callLlmJsonWithRepair<T>(
+  prompt: string,
+  maxTokens: number,
+  caller: LlmCaller = callLlm,
+): Promise<T> {
+  const raw = await caller(prompt, maxTokens);
+  try {
+    return parseLlmJson<T>(raw);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    console.error("  [personal] Invalid LLM JSON — requesting one format-only repair.");
+    const repairPrompt = `下面的模型输出不是合法 JSON。只修复 JSON 语法和转义，完整保留原始对象的字段、数组、顺序和值；不要重新生成内容，不增删事实，不添加解释或 Markdown。先在内部逐字符检查引号、逗号、括号和转义，最终只输出一个可被 JSON.parse 解析的完整 JSON。\n\n原始输出：\n${raw}`;
+    return parseLlmJson<T>(await caller(repairPrompt, maxTokens));
+  }
+}
 
 /**
  * Builds the LLM prompt for Stage 1: filtering, relevance judgment,
@@ -750,6 +930,9 @@ ${candidateBlock}
 - 对当前项目有明确工程参考价值；或
 - 提供可以验证、试用、迁移或实施的方法；或
 - 会影响后续技术选择和架构决策
+- 候选质量足够时，优先形成 12～16 条完整报告条目；不得把五分钟概览的门槛套用到完整报告
+- RAG、长期记忆、Context Engineering、Agent 工作流、评测与可观测性等可落地工程经验，即使不要求立即行动，也可以进入完整报告
+- GitHub Search 候选是经过快照去重的首次项目发现，不是活跃度榜；若描述给出了与用户方向直接相关的具体能力，可作为“值得评估的项目”进入完整报告；只有高度贴合当前项目、值得优先评估时才可进入五分钟概览
 
 ## 筛选规则
 
@@ -770,6 +953,9 @@ ${candidateBlock}
 ## 明确排除或降级
 
 - ${config.usesAnthropicSubscription ? "" : "Anthropic Claude 模型/账号/订阅/价格变化 → 直接排除（用户不使用）"}
+- ${config.usesAnthropicAccount || config.usesAnthropicSubscription ? "" : "依赖 Anthropic 账号或订阅、claude.ai Web/移动端登录才能使用的功能 → 直接排除"}
+- 用户未明确确认使用 Remote Control、本地代理或特定高级功能时，不得以“可能使用”“可能受影响”为理由收录
+- 尚未交付的功能请求、零证据体验建议、没有当前行动的 Issue → 排除
 - AI CLI 活跃度、Star、热度、成熟度和普通横向排行榜 → 排除
 - 普通 Claw 项目动态 → 排除
 - 普通 OpenCode、Gemini CLI 等非主力工具的普通版本动态 → 排除
@@ -800,6 +986,44 @@ export function capFilterResult(filterResult: FilterResult, limit: number): Filt
   };
 }
 
+export function normalizeFilterResultAssignments(
+  filterResult: FilterResult,
+  candidateCount: number,
+): FilterResult {
+  const claimed = new Set<string>();
+  const keepFirstAssignment = (ids: string[]): string[] => {
+    const result: string[] = [];
+    for (const rawId of ids) {
+      const id = normalizeCandidateId(rawId);
+      // Preserve malformed and out-of-range IDs so strict validation still
+      // reports them instead of silently hiding model corruption.
+      if (id === null || Number(id) > candidateCount) {
+        result.push(rawId);
+        continue;
+      }
+      if (claimed.has(id)) continue;
+      claimed.add(id);
+      result.push(id);
+    }
+    return result;
+  };
+
+  const kept = filterResult.kept
+    .map((event) => ({
+      ...event,
+      keepIds: keepFirstAssignment(event.keepIds ?? []),
+      mergedIds: keepFirstAssignment(event.mergedIds ?? []),
+    }))
+    .filter((event) => event.keepIds.length + (event.mergedIds?.length ?? 0) > 0);
+
+  const excluded = (filterResult.excluded ?? []).filter((entry) => {
+    const id = normalizeCandidateId(entry.id);
+    return id === null || Number(id) > candidateCount || !claimed.has(id);
+  });
+
+  return { kept, excluded };
+}
+
 /**
  * Generates the personal report: two-stage LLM call → JSON → validate → file save.
  *
@@ -814,21 +1038,29 @@ export async function generatePersonalReport(
   dateStr: string,
   lang: Lang,
 ): Promise<{ json: PersonalReportJson; markdown: string } | null> {
-  if (candidates.length === 0) {
+  const coveredCandidates = filterCandidatesByCoverage(candidates, coverageFrom, coverageTo);
+  if (coveredCandidates.length !== candidates.length) {
+    console.log(
+      `  [personal] Coverage filter: ${coveredCandidates.length}/${candidates.length} candidates in window`,
+    );
+  }
+
+  if (coveredCandidates.length === 0) {
     console.log("  [personal] No candidates — generating no-update report.");
     return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
   }
 
   // Stage 1: Filter and merge
   console.log("  [personal] Stage 1: filtering and merging candidates...");
-  const filterPrompt = buildFilterPrompt(candidates, config, coverageFrom, coverageTo);
-  const filterRaw = await callLlm(filterPrompt, FILTER_TOKENS);
-  let filterResult = parseLlmJson<FilterResult>(filterRaw);
+  const filterPrompt = buildFilterPrompt(coveredCandidates, config, coverageFrom, coverageTo);
+  let filterResult = await callLlmJsonWithRepair<FilterResult>(filterPrompt, FILTER_TOKENS);
 
   if (!filterResult || !Array.isArray(filterResult.kept)) {
     console.error("  [personal] Stage 1 filter failed — aborting.");
     return null;
   }
+
+  filterResult = normalizeFilterResultAssignments(filterResult, coveredCandidates.length);
 
   if (filterResult.kept.length === 0) {
     console.log("  [personal] Stage 1 filtered all candidates — generating no-update report.");
@@ -848,7 +1080,7 @@ export async function generatePersonalReport(
   );
 
   // Validate Stage 1 filter result integrity
-  const filterValidation = validateFilterResult(filterResult, candidates.length);
+  const filterValidation = validateFilterResult(filterResult, coveredCandidates.length);
   if (!filterValidation.ok) {
     console.error("  [personal] Stage 1 filter validation failed:");
     for (const err of filterValidation.errors) {
@@ -857,12 +1089,18 @@ export async function generatePersonalReport(
     return null;
   }
 
+  if (process.env["DRY_RUN"] === "true") {
+    saveFile(
+      JSON.stringify(buildSelectionAudit(coveredCandidates, filterResult), null, 2),
+      dateStr,
+      "selection-audit.json",
+    );
+  }
+
   // Stage 2: Generate report from filtered events
   console.log("  [personal] Stage 2: generating structured report...");
-  const reportPrompt = buildReportPrompt(candidates, filterResult, config, coverageFrom, coverageTo);
-  const reportTokens = 8192;
-  const raw = await callLlm(reportPrompt, reportTokens);
-  const json = parseLlmJson<PersonalReportJson>(raw);
+  const reportPrompt = buildReportPrompt(coveredCandidates, filterResult, config, coverageFrom, coverageTo);
+  const json = await callLlmJsonWithRepair<PersonalReportJson>(reportPrompt, REPORT_TOKENS);
 
   if (!json || !json.events) {
     console.error("  [personal] Stage 2 report parse failed.");
@@ -875,11 +1113,19 @@ export async function generatePersonalReport(
   json.coverageTo = coverageTo;
 
   // Validate using per-filterEventId URL sets (not a global whitelist)
-  const filterEventUrlMap = buildFilterEventUrlMap(candidates, filterResult);
+  const filterEventUrlMap = buildFilterEventUrlMap(coveredCandidates, filterResult);
   const allKeptUrls = new Set<string>();
   for (const urls of filterEventUrlMap.values()) {
     for (const url of urls) allKeptUrls.add(url);
   }
+  canonicalizeReportSourceUrls(json, allKeptUrls);
+  bindReportEventsToFilterSources(json, filterEventUrlMap);
+  filterAndFillFiveMinuteBrief(
+    json,
+    buildFiveMinuteExcludedFilterEventIds(coveredCandidates, filterResult, config),
+    config.fiveMinuteLimit,
+    Math.min(5, config.fiveMinuteLimit),
+  );
   const validation = validateReport(json, config, allKeptUrls, filterEventUrlMap);
 
   if (!validation.ok) {
@@ -1074,6 +1320,8 @@ ${eventBlocks}
 4. 按动态主题组织，不按来源或项目机械分组。
 5. 每个事件必须有唯一的 id（格式 evt-N）。
 6. 每个事件必须原样输出 filterEventId（格式 filter-event-N），不得修改。
+   - filterEventId 必须与该事件所在的 [Event N] 块一致；不要按最终输出顺序重新编号。
+   - 每个 [Event N] 块必须恰好生成一个最终事件，candidateIds 和 sources 只能复制该块的 Available Sources。
 7. 每个事件必须有 eventTime（ISO-8601 格式）。
 7. 每个事件必须有 candidateIds。
 8. updateKind 必须是 "new"、"updated" 或 "snapshot-change"。
@@ -1090,13 +1338,16 @@ ${eventBlocks}
 
 ### 排除规则
 17. ${config.usesAnthropicSubscription ? "" : "用户不使用 Anthropic Claude 订阅，Anthropic Claude 模型/账号/订阅的价格变化直接排除。"}
-18. AI CLI 活跃度、Star、成熟度、横向排名排除。
-19. 普通 Claw 项目和生态动态排除。
-20. 公司战略、市场定位、社区治理排除。
-21. 纯 UI、项目自身 CI 排除。
-22. 纯版本号更新排除，除非有实质功能变化。
-23. 商业机会只有在具体、可信、可行动时才提及。
-24. 五分钟概览的入选门槛更高：必须会改变用户当前行动、决策、能力边界、效率或可靠性。`;
+18. ${config.usesAnthropicAccount || config.usesAnthropicSubscription ? "" : "依赖 Anthropic 账号或订阅、claude.ai Web/移动端登录的功能直接排除；不要把 Claude Code 客户端等同于 Anthropic 服务。"}
+19. 用户未确认使用 Remote Control、本地代理或特定高级功能时，不得用“可能受影响”推断相关性。
+20. 尚未交付、没有当前行动的功能请求排除。
+21. AI CLI 活跃度、Star、成熟度、横向排名排除。
+22. 普通 Claw 项目和生态动态排除。
+23. 公司战略、市场定位、社区治理排除。
+24. 纯 UI、项目自身 CI 排除。
+25. 纯版本号更新排除，除非有实质功能变化。
+26. 商业机会只有在具体、可信、可行动时才提及。
+27. 五分钟概览的入选门槛更高：必须会改变用户当前行动、决策、能力边界、效率或可靠性。`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,6 +1391,160 @@ export function buildFilterEventUrlMap(
     map.set(filterEventId, urls);
   }
   return map;
+}
+
+/**
+ * Rebind the model-copied filterEventId from its source URLs when they identify
+ * exactly one Stage 1 event. The strict validator still rejects events whose
+ * URLs span multiple Stage 1 events or do not belong to any kept event.
+ */
+export function bindReportEventsToFilterSources(
+  report: Pick<PersonalReportJson, "events">,
+  filterEventUrlMap: Map<string, Set<string>>,
+): void {
+  for (const event of report.events ?? []) {
+    const eventUrls = new Set([
+      ...(event.candidateIds ?? []),
+      ...(event.sources ?? []).map((source) => source.url).filter(Boolean),
+    ]);
+    if (eventUrls.size === 0) continue;
+
+    const matches = [...filterEventUrlMap.entries()].filter(([, allowedUrls]) =>
+      [...eventUrls].every((url) => allowedUrls.has(url)),
+    );
+    if (matches.length === 1) {
+      event.filterEventId = matches[0]![0];
+    }
+  }
+}
+
+function sourceUrlIdentity(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    parsed.hash = "";
+    return `${parsed.host.toLowerCase()}${parsed.pathname.replace(/\/+$/, "")}${parsed.search}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Restore an LLM-normalized URL (for example ArXiv http → https) to the exact
+ * URL collected from a kept candidate. Unknown or ambiguous URLs are left
+ * untouched so strict validation can still reject them.
+ */
+export function canonicalizeReportSourceUrls(
+  report: Pick<PersonalReportJson, "events">,
+  candidateUrls: Set<string>,
+): void {
+  const canonicalByIdentity = new Map<string, string | null>();
+  for (const candidateUrl of candidateUrls) {
+    const identity = sourceUrlIdentity(candidateUrl);
+    if (!identity) continue;
+    const existing = canonicalByIdentity.get(identity);
+    canonicalByIdentity.set(identity, existing && existing !== candidateUrl ? null : candidateUrl);
+  }
+
+  const canonicalize = (url: string): string => {
+    if (candidateUrls.has(url)) return url;
+    const identity = sourceUrlIdentity(url);
+    return (identity ? canonicalByIdentity.get(identity) : null) ?? url;
+  };
+
+  for (const event of report.events ?? []) {
+    event.candidateIds = (event.candidateIds ?? []).map(canonicalize);
+    for (const source of event.sources ?? []) {
+      source.url = canonicalize(source.url);
+    }
+  }
+}
+
+export function capFiveMinuteBrief(brief: PersonalReportJson["fiveMinuteBrief"], limit: number): void {
+  let remaining = Math.max(0, Math.floor(limit));
+  brief.topicGroups = (brief.topicGroups ?? [])
+    .map((group) => {
+      const eventIds = (group.eventIds ?? []).slice(0, remaining);
+      remaining -= eventIds.length;
+      return { ...group, eventIds };
+    })
+    .filter((group) => group.eventIds.length > 0);
+}
+
+export function buildFiveMinuteExcludedFilterEventIds(
+  candidates: MergedCandidate[],
+  filterResult: FilterResult,
+  config: PersonalReportConfig,
+): Set<string> {
+  const result = new Set<string>();
+  const backend = config.modelBackend.toLowerCase();
+  for (let index = 0; index < filterResult.kept.length; index++) {
+    const event = filterResult.kept[index]!;
+    const eventCandidates = [...event.keepIds, ...(event.mergedIds ?? [])]
+      .map((id) => candidates[Number(id) - 1])
+      .filter(Boolean) as MergedCandidate[];
+    if (eventCandidates.length > 0) {
+      const isNonPrimaryRelease = eventCandidates.every((candidate) => {
+        const category = categorizeSource(candidate, config.primaryTools);
+        return candidate.infoType === "release" && category !== "codex" && category !== "claudeCode";
+      });
+      const isNonBackendBenchmark = eventCandidates.every((candidate) => {
+        const text = `${candidate.title} ${candidate.summary} ${candidate.rawSummary}`;
+        const publisher = `${candidate.sourceName} ${candidate.subject}`.toLowerCase();
+        const providerContext = `${publisher} ${text}`.toLowerCase();
+        return (
+          candidate.infoType === "article" &&
+          /(?:benchmark|arc[-\s]?agi|scores?|accuracy|leaderboard|基准|得分|分数|准确率|榜单)/i.test(text) &&
+          /\b(?:openai|anthropic|google|deepmind|gemini|gpt|claude|xai|grok|mistral|deepseek|qwen|mimo)\b/i.test(
+            providerContext,
+          ) &&
+          !providerContext.includes(backend)
+        );
+      });
+      if (isNonPrimaryRelease || isNonBackendBenchmark) {
+        result.add(`filter-event-${index + 1}`);
+      }
+    }
+  }
+  return result;
+}
+
+export function filterAndFillFiveMinuteBrief(
+  report: Pick<PersonalReportJson, "events" | "fiveMinuteBrief" | "fullReport">,
+  disallowedFilterEventIds: Set<string>,
+  limit: number,
+  minimum: number,
+): void {
+  const disallowedEventIds = new Set(
+    (report.events ?? [])
+      .filter((event) => event.filterEventId && disallowedFilterEventIds.has(event.filterEventId))
+      .map((event) => event.id),
+  );
+
+  report.fiveMinuteBrief.topicGroups = (report.fiveMinuteBrief.topicGroups ?? [])
+    .map((group) => ({
+      ...group,
+      eventIds: (group.eventIds ?? []).filter((eventId) => !disallowedEventIds.has(eventId)),
+    }))
+    .filter((group) => group.eventIds.length > 0);
+
+  const selected = new Set(report.fiveMinuteBrief.topicGroups.flatMap((group) => group.eventIds));
+  const target = Math.min(Math.max(0, minimum), Math.max(0, limit));
+  for (const fullGroup of report.fullReport.topicGroups ?? []) {
+    for (const eventId of fullGroup.eventIds ?? []) {
+      if (selected.size >= target) break;
+      if (selected.has(eventId) || disallowedEventIds.has(eventId)) continue;
+      let briefGroup = report.fiveMinuteBrief.topicGroups.find((group) => group.name === fullGroup.name);
+      if (!briefGroup) {
+        briefGroup = { name: fullGroup.name, eventIds: [] };
+        report.fiveMinuteBrief.topicGroups.push(briefGroup);
+      }
+      briefGroup.eventIds.push(eventId);
+      selected.add(eventId);
+    }
+    if (selected.size >= target) break;
+  }
+
+  capFiveMinuteBrief(report.fiveMinuteBrief, limit);
 }
 
 /** @deprecated Use buildFilterEventUrlMap for per-event validation. */
