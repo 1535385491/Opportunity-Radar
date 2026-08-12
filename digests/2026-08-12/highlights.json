@@ -1,0 +1,6 @@
+{
+  "ai-personal": [
+    "Claude Code v2.1.228 修复 Windows 可靠性及交互问题：Claude Code 发布 v2.1.228，修复了在 Windows 上无法找到 Git/Git Bash 路径，以及交互式会话可能无响应的问题。",
+    "Claude Code v2.1.227 修复订阅检查与 claude-code-action 失败问题：Claude Code 发布 v2.1.227，修复了因订阅状态检查错误导致的会话问题，以及在 `claude-code-action` 中所有 Bash 命令失败的严重 Bug。"
+  ]
+}
