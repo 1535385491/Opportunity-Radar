@@ -1,0 +1,30 @@
+{
+  "summary": "Claude Code v2.1.233 发布：新增 GitLab MR 支持及用户身份转发：Claude Code v2.1.233 新增了对 GitLab 合并请求 (MR) 的支持，并为网关模式引入了用户身份转发功能。",
+  "signals": [
+    {
+      "title": "Claude Code v2.1.233 发布：新增 GitLab MR 支持及用户身份转发",
+      "description": "如果你的项目托管在 GitLab 上，可以尝试使用 `--worktree` 标志关联 MR。若部署了网关，可评估启用 `forward_user_identity` 设置。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Claude Code v2.1.232 发布：子代理 Fork 默认开启及会话间提及",
+      "description": "立即关注并适应新的默认行为。在启动子代理处理子任务时，注意其现在默认在后台运行。尝试使用 `@` 来引用其他会话，以简化跨任务上下文传递。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Kungfu: 跨 Agent 工作流与状态保持框架",
+      "description": "将其添加到观察清单。关注其技术实现（C++）、支持的 Agent 列表和具体的状态持久化方案，评估与你现有工作流（如 mimo 后端）的集成可能性。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Claude Code v2.1.231 修复：MCP OAuth 登录重定向 URI 不匹配问题",
+      "description": "如果你在使用或计划使用基于 OAuth 的 MCP 工具（特别是涉及 Slack 等服务），请确保升级到此版本或更高版本以避免此问题。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Helicone：开源 LLM 可观测性平台",
+      "description": "将其添加到观察清单。评估其与你的技术栈（如 mimo 后端）的集成难度和数据隐私性。对于关键项目，可考虑进行概念验证。",
+      "report": "ai-personal"
+    }
+  ]
+}

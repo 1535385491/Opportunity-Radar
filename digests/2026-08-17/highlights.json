@@ -1,0 +1,8 @@
+{
+  "ai-personal": [
+    "Claude Code v2.1.233 发布：新增 GitLab MR 支持及用户身份转发：Claude Code v2.1.233 新增了对 GitLab 合并请求 (MR) 的支持，并为网关模式引入了用户身份转发功能。",
+    "Claude Code v2.1.229 发布：增强 Remote Control 可恢复性与服务器钩子支持：Claude Code v2.1.229 增加了 Remote Control 会话恢复的文档，为自托管运行器添加了服务器端钩子支持，并优化了网关流响应。",
+    "Claude Code v2.1.232 发布：子代理 Fork 默认开启及会话间提及：Claude Code v2.1.232 将子代理的 Fork 模式设为默认，并引入了通过 `@` 符号在会话间提及和交互的能力。",
+    "Claude Code v2.1.231 修复：MCP OAuth 登录重定向 URI 不匹配问题：Claude Code v2.1.231 修复了在使用预注册 OAuth 客户端（如 Slack）时，MCP OAuth 登录因重定向 URI 不匹配而失败的问题。"
+  ]
+}
