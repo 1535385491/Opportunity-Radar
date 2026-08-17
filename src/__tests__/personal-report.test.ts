@@ -44,6 +44,8 @@ import {
   filterCandidatesByCoverage,
   buildSelectionAudit,
   generatePersonalReport,
+  repairReportWithErrors,
+  pruneInvalidEvents,
   isHardExcluded,
   isLowValueForRecovery,
   CATEGORY_LIMITS,
@@ -4315,7 +4317,7 @@ describe("Stage 2 completion", () => {
     expect(fullIds.length).toBe(13);
   });
 
-  it("completion only returns 1 of 2 missing events → final failure, no report written", async () => {
+  it("completion only returns 1 of 2 missing events → repair falls back to pruning, partial result kept", async () => {
     const candidates = makeCandidates(13);
     const stage1Result = makeStage1ResponseN(13);
     const mock = vi.mocked(callLlm);
@@ -4340,6 +4342,8 @@ describe("Stage 2 completion", () => {
         },
       ],
     };
+    // Repair attempts keep the 12-event state (filter-event-13 stays missing)
+    const afterCompletion = makeReportJsonForFilterEvents([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
 
     let callCount = 0;
     mock.mockImplementation(async (prompt: string) => {
@@ -4347,6 +4351,7 @@ describe("Stage 2 completion", () => {
       if (call === 0) return JSON.stringify(stage1Result);
       if (call === 1) return JSON.stringify(incompleteReport);
       if (prompt.includes("缺失事件")) return JSON.stringify(partialCompletion);
+      if (prompt.includes("修复")) return JSON.stringify(afterCompletion);
       throw new Error("Unexpected call " + call);
     });
 
@@ -4359,13 +4364,14 @@ describe("Stage 2 completion", () => {
       "zh",
     );
 
-    // Must fail — completion didn't cover all missing IDs
-    expect(result).toBeNull();
-    // Completion was attempted exactly once
-    expect(callCount).toBe(3);
+    // Not a total failure: the completed event survives pruning of the missing one
+    expect(result).not.toBeNull();
+    expect(result!.json.events).toHaveLength(12);
+    // Stage 1 + Stage 2 + completion + 2 repair attempts
+    expect(callCount).toBe(5);
   });
 
-  it("first validation has non-mapping errors → no completion attempted", async () => {
+  it("non-mapping errors → no completion attempted, repair then prune keeps valid events", async () => {
     const candidates = makeCandidates(5);
     const stage1Result = makeStage1ResponseN(5);
     const mock = vi.mocked(callLlm);
@@ -4376,10 +4382,12 @@ describe("Stage 2 completion", () => {
     badReport.events[0]!.sources = [{ name: "Fake", url: "https://fabricated-url.com/1" }];
 
     let callCount = 0;
-    mock.mockImplementation(async (_prompt: string) => {
+    mock.mockImplementation(async (prompt: string) => {
       const call = callCount++;
       if (call === 0) return JSON.stringify(stage1Result);
       if (call === 1) return JSON.stringify(badReport);
+      // Repair attempts keep the fabricated URL — validation keeps failing
+      if (prompt.includes("修复")) return JSON.stringify(badReport);
       throw new Error("Should not call completion for non-mapping errors");
     });
 
@@ -4392,9 +4400,11 @@ describe("Stage 2 completion", () => {
       "zh",
     );
 
-    expect(result).toBeNull();
-    // Only Stage 1 + Stage 2, no completion
-    expect(callCount).toBe(2);
+    // Not a total failure: the fabricated-URL event is pruned, the rest survive
+    expect(result).not.toBeNull();
+    expect(result!.json.events).toHaveLength(4);
+    // Stage 1 + Stage 2 + 2 repair attempts — completion never called
+    expect(callCount).toBe(4);
   });
 
   it("completion returns unknown filterEventId → rejected, no pollution", async () => {
@@ -4437,12 +4447,14 @@ describe("Stage 2 completion", () => {
       ],
     };
 
+    const originalEvents = structuredClone(incompleteReport.events);
     let callCount = 0;
     mock.mockImplementation(async (prompt: string) => {
       const call = callCount++;
       if (call === 0) return JSON.stringify(stage1Result);
       if (call === 1) return JSON.stringify(incompleteReport);
       if (prompt.includes("缺失事件")) return JSON.stringify(badCompletion);
+      if (prompt.includes("修复")) return JSON.stringify(incompleteReport);
       throw new Error("Unexpected call");
     });
 
@@ -4455,10 +4467,14 @@ describe("Stage 2 completion", () => {
       "zh",
     );
 
-    // Must fail: still missing filter-event-5 (completion didn't cover it)
-    expect(result).toBeNull();
-    // Existing events not polluted: the3 original events should not have been modified
-    expect(callCount).toBe(3);
+    // Completion rejected; repair keeps the report, pruning ignores missing
+    // filter-event-4/5 instead of failing the whole report
+    expect(result).not.toBeNull();
+    expect(result!.json.events).toHaveLength(3);
+    // Stage 1 + Stage 2 + completion + 2 repair attempts
+    expect(callCount).toBe(5);
+    // Existing events not polluted: the original events should not have been modified
+    expect(incompleteReport.events).toEqual(originalEvents);
   });
 
   it("completion is called at most once", async () => {
@@ -4477,6 +4493,7 @@ describe("Stage 2 completion", () => {
       if (call === 0) return JSON.stringify(stage1Result);
       if (call === 1) return JSON.stringify(incompleteReport);
       if (prompt.includes("缺失事件")) return JSON.stringify(emptyCompletion);
+      if (prompt.includes("修复")) return JSON.stringify(incompleteReport);
       throw new Error("Should not make additional calls");
     });
 
@@ -4489,9 +4506,11 @@ describe("Stage 2 completion", () => {
       "zh",
     );
 
-    expect(result).toBeNull();
-    // Exactly 3 calls: Stage 1 + Stage 2 + 1 completion (no retry)
-    expect(callCount).toBe(3);
+    // Empty completion is rejected; the pipeline degrades instead of failing
+    expect(result).not.toBeNull();
+    expect(result!.json.events).toHaveLength(3);
+    // Stage 1 + Stage 2 + 1 completion (no retry) + 2 repair attempts
+    expect(callCount).toBe(5);
   });
 });
 
@@ -4535,7 +4554,7 @@ describe("Stage 2 completion fail-closed", () => {
     return { candidates, stage1Result, incompleteReport };
   };
 
-  it("unknown filterEventId + all correct missing events → fail, no pollution", async () => {
+  it("unknown filterEventId + all correct missing events → completion rejected, report degrades", async () => {
     const { candidates, stage1Result, incompleteReport } = setup();
     const mock = vi.mocked(callLlm);
     mock.mockReset();
@@ -4554,6 +4573,7 @@ describe("Stage 2 completion fail-closed", () => {
       if (call === 0) return JSON.stringify(stage1Result);
       if (call === 1) return JSON.stringify(incompleteReport);
       if (prompt.includes("缺失事件")) return JSON.stringify(completionResponse);
+      if (prompt.includes("修复")) return JSON.stringify(incompleteReport);
       throw new Error("Unexpected call");
     });
 
@@ -4567,13 +4587,15 @@ describe("Stage 2 completion fail-closed", () => {
       "zh",
     );
 
-    expect(result).toBeNull();
-    expect(callCount).toBe(3);
+    // Completion rejected for pollution; pruning drops missing 12/13 instead of failing
+    expect(result).not.toBeNull();
+    expect(result!.json.events).toHaveLength(11);
+    expect(callCount).toBe(5);
     // Verify the incomplete report was not mutated
     expect(incompleteReport.events).toEqual(originalEvents);
   });
 
-  it("filterEventId already in first report + all correct missing events → fail", async () => {
+  it("filterEventId already in first report + all correct missing events → completion rejected, report degrades", async () => {
     const { candidates, stage1Result, incompleteReport } = setup();
     const mock = vi.mocked(callLlm);
     mock.mockReset();
@@ -4592,6 +4614,7 @@ describe("Stage 2 completion fail-closed", () => {
       if (call === 0) return JSON.stringify(stage1Result);
       if (call === 1) return JSON.stringify(incompleteReport);
       if (prompt.includes("缺失事件")) return JSON.stringify(completionResponse);
+      if (prompt.includes("修复")) return JSON.stringify(incompleteReport);
       throw new Error("Unexpected call");
     });
 
@@ -4604,11 +4627,12 @@ describe("Stage 2 completion fail-closed", () => {
       "zh",
     );
 
-    expect(result).toBeNull();
-    expect(callCount).toBe(3);
+    expect(result).not.toBeNull();
+    expect(result!.json.events).toHaveLength(11);
+    expect(callCount).toBe(5);
   });
 
-  it("duplicate filterEventId within completion (other missing event present) → fail", async () => {
+  it("duplicate filterEventId within completion (other missing event present) → completion rejected, report degrades", async () => {
     const { candidates, stage1Result, incompleteReport } = setup();
     const mock = vi.mocked(callLlm);
     mock.mockReset();
@@ -4627,6 +4651,7 @@ describe("Stage 2 completion fail-closed", () => {
       if (call === 0) return JSON.stringify(stage1Result);
       if (call === 1) return JSON.stringify(incompleteReport);
       if (prompt.includes("缺失事件")) return JSON.stringify(completionResponse);
+      if (prompt.includes("修复")) return JSON.stringify(incompleteReport);
       throw new Error("Unexpected call");
     });
 
@@ -4639,11 +4664,12 @@ describe("Stage 2 completion fail-closed", () => {
       "zh",
     );
 
-    expect(result).toBeNull();
-    expect(callCount).toBe(3);
+    expect(result).not.toBeNull();
+    expect(result!.json.events).toHaveLength(11);
+    expect(callCount).toBe(5);
   });
 
-  it("event ID already in first report + all correct filterEventIds → fail", async () => {
+  it("event ID already in first report + all correct filterEventIds → completion rejected, report degrades", async () => {
     const { candidates, stage1Result, incompleteReport } = setup();
     const mock = vi.mocked(callLlm);
     mock.mockReset();
@@ -4662,6 +4688,7 @@ describe("Stage 2 completion fail-closed", () => {
       if (call === 0) return JSON.stringify(stage1Result);
       if (call === 1) return JSON.stringify(incompleteReport);
       if (prompt.includes("缺失事件")) return JSON.stringify(completionResponse);
+      if (prompt.includes("修复")) return JSON.stringify(incompleteReport);
       throw new Error("Unexpected call");
     });
 
@@ -4674,11 +4701,12 @@ describe("Stage 2 completion fail-closed", () => {
       "zh",
     );
 
-    expect(result).toBeNull();
-    expect(callCount).toBe(3);
+    expect(result).not.toBeNull();
+    expect(result!.json.events).toHaveLength(11);
+    expect(callCount).toBe(5);
   });
 
-  it("duplicate event ID within completion + all correct filterEventIds → fail", async () => {
+  it("duplicate event ID within completion + all correct filterEventIds → completion rejected, report degrades", async () => {
     const { candidates, stage1Result, incompleteReport } = setup();
     const mock = vi.mocked(callLlm);
     mock.mockReset();
@@ -4696,6 +4724,7 @@ describe("Stage 2 completion fail-closed", () => {
       if (call === 0) return JSON.stringify(stage1Result);
       if (call === 1) return JSON.stringify(incompleteReport);
       if (prompt.includes("缺失事件")) return JSON.stringify(completionResponse);
+      if (prompt.includes("修复")) return JSON.stringify(incompleteReport);
       throw new Error("Unexpected call");
     });
 
@@ -4708,8 +4737,9 @@ describe("Stage 2 completion fail-closed", () => {
       "zh",
     );
 
-    expect(result).toBeNull();
-    expect(callCount).toBe(3);
+    expect(result).not.toBeNull();
+    expect(result!.json.events).toHaveLength(11);
+    expect(callCount).toBe(5);
   });
 
   it("normal success path still works: exactly correct missing events, no extras", async () => {
@@ -5915,5 +5945,312 @@ describe("speculative non-primary release exclusion", () => {
     expect(cand1!.decision).toBe("excluded");
     expect(cand1!.reason).toBe("speculative-non-primary-release");
     expect(audit.decisionCounts.unclassified).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// repairReportWithErrors — targeted repair after validation failures
+// ---------------------------------------------------------------------------
+
+describe("repairReportWithErrors", () => {
+  it("passes errors and URL whitelist into the repair prompt, returns repaired JSON", async () => {
+    const candidates = makeCandidates(2);
+    const stage1Result = makeStage1ResponseN(2);
+    const current = makeReportJsonForFilterEvents([1, 2]);
+    current.events[0]!.full.evidence = "";
+    const errors = [
+      {
+        code: "MISSING_FULL_FIELDS" as const,
+        message: `event missing full.evidence: ${current.events[0]!.title}`,
+      },
+      {
+        code: "FILTER_EVENT_NOT_MAPPED" as const,
+        message: "Stage 1 kept event filter-event-2 has no corresponding final event",
+      },
+    ];
+    const repaired = makeReportJsonForFilterEvents([1, 2]);
+    const call = vi.fn().mockResolvedValue(JSON.stringify(repaired));
+
+    const result = await repairReportWithErrors(
+      current,
+      errors,
+      candidates,
+      stage1Result,
+      DEFAULT_CONFIG,
+      COVERAGE_FROM,
+      COVERAGE_TO,
+      call,
+    );
+
+    expect(call).toHaveBeenCalledTimes(1);
+    const prompt = String(call.mock.calls[0]![0]);
+    expect(prompt).toContain("[MISSING_FULL_FIELDS]");
+    expect(prompt).toContain("Available Sources");
+    expect(prompt).toContain("https://example.com/candidate/1");
+    expect(result).not.toBeNull();
+    expect(result!.events).toHaveLength(2);
+  });
+
+  it("returns null when the repaired output is still unparsable", async () => {
+    const candidates = makeCandidates(1);
+    const stage1Result = makeStage1ResponseN(1);
+    const current = makeReportJsonForFilterEvents([1]);
+    const errors = [
+      {
+        code: "MISSING_FULL_FIELDS" as const,
+        message: `event missing full.evidence: ${current.events[0]!.title}`,
+      },
+    ];
+    const call = vi.fn().mockResolvedValue("{still not json");
+
+    const result = await repairReportWithErrors(
+      current,
+      errors,
+      candidates,
+      stage1Result,
+      DEFAULT_CONFIG,
+      COVERAGE_FROM,
+      COVERAGE_TO,
+      call,
+    );
+
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pruneInvalidEvents — fallback degradation after repair is exhausted
+// ---------------------------------------------------------------------------
+
+describe("pruneInvalidEvents", () => {
+  it("drops events implicated by MISSING_FULL_FIELDS and rebuilds references", () => {
+    const report = makeReportJsonForFilterEvents([1, 2, 3]);
+    report.events[0]!.full.evidence = "";
+    const errors = [
+      {
+        code: "MISSING_FULL_FIELDS" as const,
+        message: `event missing full.evidence: ${report.events[0]!.title}`,
+      },
+    ];
+
+    const result = pruneInvalidEvents(report, errors, DEFAULT_CONFIG);
+
+    expect(result).not.toBeNull();
+    expect(result!.json.events.map((e) => e.id)).toEqual(["evt-2", "evt-3"]);
+    expect(result!.removedEventIds).toContain("evt-1");
+    const fullIds = result!.json.fullReport.topicGroups.flatMap((g) => g.eventIds);
+    expect(fullIds).toEqual(["evt-2", "evt-3"]);
+    expect(result!.json.fiveMinuteBrief.topicGroups.flatMap((g) => g.eventIds)).toEqual(["evt-2", "evt-3"]);
+  });
+
+  it("returns null when every event is pruned", () => {
+    const report = makeReportJsonForFilterEvents([1]);
+    report.events[0]!.full.evidence = "";
+    const errors = [
+      {
+        code: "MISSING_FULL_FIELDS" as const,
+        message: `event missing full.evidence: ${report.events[0]!.title}`,
+      },
+    ];
+
+    expect(pruneInvalidEvents(report, errors, DEFAULT_CONFIG)).toBeNull();
+  });
+
+  it("marks FILTER_EVENT_NOT_MAPPED filterEventIds as ignored", () => {
+    const report = makeReportJsonForFilterEvents([1]);
+    const errors = [
+      {
+        code: "FILTER_EVENT_NOT_MAPPED" as const,
+        message: "Stage 1 kept event filter-event-2 has no corresponding final event",
+      },
+    ];
+
+    const result = pruneInvalidEvents(report, errors, DEFAULT_CONFIG);
+
+    expect(result).not.toBeNull();
+    expect(result!.removedFilterEventIds).toContain("filter-event-2");
+    expect(result!.json.events.map((e) => e.id)).toEqual(["evt-1"]);
+  });
+
+  it("drops both events sharing a filterEventId (FILTER_EVENT_MULTI_MAPPED)", () => {
+    const report = makeReportJsonForFilterEvents([1, 2, 3]);
+    const errors = [
+      {
+        code: "FILTER_EVENT_MULTI_MAPPED" as const,
+        message: `filterEventId filter-event-1 used by multiple events: ${report.events[0]!.id} and ${report.events[1]!.id}`,
+      },
+    ];
+
+    const result = pruneInvalidEvents(report, errors, DEFAULT_CONFIG);
+
+    expect(result).not.toBeNull();
+    expect(result!.json.events.map((e) => e.id)).toEqual(["evt-3"]);
+  });
+
+  it("keeps the first consumer when a URL is consumed by multiple events", () => {
+    const report = makeReportJsonForFilterEvents([1, 2]);
+    const errors = [
+      {
+        code: "FABRICATED_URL" as const,
+        message: `candidate URL consumed by multiple events: https://example.com/candidate/1 (${report.events[0]!.title} and ${report.events[1]!.title})`,
+      },
+    ];
+
+    const result = pruneInvalidEvents(report, errors, DEFAULT_CONFIG);
+
+    expect(result).not.toBeNull();
+    expect(result!.json.events.map((e) => e.id)).toEqual(["evt-1"]);
+  });
+
+  it("truncates over-limit events and fills missing toolStatus", () => {
+    const report = makeReportJsonForFilterEvents([1, 2, 3, 4, 5]);
+    report.toolStatus = { codex: "ok" };
+    const errors = [
+      { code: "EVENTS_OVER_LIMIT" as const, message: "events has 5 items, limit is 16" },
+      { code: "TOOL_STATUS_MISSING_TOOL" as const, message: "toolStatus missing primary tool: claude-code" },
+    ];
+
+    const result = pruneInvalidEvents(report, errors, DEFAULT_CONFIG);
+
+    expect(result).not.toBeNull();
+    expect(result!.json.toolStatus["claude-code"]).toBe("本期无重要更新");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// generatePersonalReport — resilience (never aborts on quality failures)
+// ---------------------------------------------------------------------------
+
+describe("generatePersonalReport — resilience", () => {
+  it("repairs validation failures with a targeted LLM call and returns the repaired report", async () => {
+    const candidates = makeCandidates(1);
+    const stage1Result = makeStage1ResponseN(1);
+    const badReport = makeReportJsonForFilterEvents([1]);
+    badReport.events[0]!.full.evidence = "";
+    const goodReport = makeReportJsonForFilterEvents([1]);
+    const mock = vi.mocked(callLlm);
+    mock.mockReset();
+    mock
+      .mockResolvedValueOnce(JSON.stringify(stage1Result))
+      .mockResolvedValueOnce(JSON.stringify(badReport))
+      .mockResolvedValueOnce(JSON.stringify(goodReport));
+
+    const result = await generatePersonalReport(
+      candidates,
+      DEFAULT_CONFIG,
+      COVERAGE_FROM,
+      COVERAGE_TO,
+      "2026-08-03",
+      "zh",
+    );
+
+    expect(result.json.events).toHaveLength(1);
+    expect(result.json.events[0]!.full.evidence).toBeTruthy();
+    // Stage 1 + Stage 2 + 1 repair
+    expect(mock).toHaveBeenCalledTimes(3);
+  });
+
+  it("prunes invalid events when repair keeps failing", async () => {
+    const candidates = makeCandidates(2);
+    const stage1Result = makeStage1ResponseN(2);
+    const badReport = makeReportJsonForFilterEvents([1, 2]);
+    badReport.events[0]!.full.evidence = "";
+    const mock = vi.mocked(callLlm);
+    mock.mockReset();
+    mock
+      .mockResolvedValueOnce(JSON.stringify(stage1Result))
+      .mockResolvedValueOnce(JSON.stringify(badReport))
+      .mockResolvedValueOnce(JSON.stringify(badReport))
+      .mockResolvedValueOnce(JSON.stringify(badReport));
+
+    const result = await generatePersonalReport(
+      candidates,
+      DEFAULT_CONFIG,
+      COVERAGE_FROM,
+      COVERAGE_TO,
+      "2026-08-03",
+      "zh",
+    );
+
+    // The event missing evidence is dropped; the valid event survives
+    expect(result.json.events).toHaveLength(1);
+    expect(result.json.events[0]!.full.evidence).toBeTruthy();
+  });
+
+  it("produces a no-update report when pruning leaves nothing", async () => {
+    const candidates = makeCandidates(1);
+    const stage1Result = makeStage1ResponseN(1);
+    const badReport = makeReportJsonForFilterEvents([1]);
+    badReport.events[0]!.full.evidence = "";
+    const mock = vi.mocked(callLlm);
+    mock.mockReset();
+    mock
+      .mockResolvedValueOnce(JSON.stringify(stage1Result))
+      .mockResolvedValueOnce(JSON.stringify(badReport))
+      .mockResolvedValueOnce(JSON.stringify(badReport))
+      .mockResolvedValueOnce(JSON.stringify(badReport));
+
+    const result = await generatePersonalReport(
+      candidates,
+      DEFAULT_CONFIG,
+      COVERAGE_FROM,
+      COVERAGE_TO,
+      "2026-08-03",
+      "zh",
+    );
+
+    expect(result.json.events).toEqual([]);
+    expect(result.json.toolStatus.codex).toBe("本期无重要更新");
+  });
+
+  it("degrades to a no-update report when Stage 2 output is unparsable", async () => {
+    const candidates = makeCandidates(1);
+    const stage1Result = makeStage1ResponseN(1);
+    const mock = vi.mocked(callLlm);
+    mock.mockReset();
+    mock
+      .mockResolvedValueOnce(JSON.stringify(stage1Result))
+      .mockResolvedValueOnce("{not valid json")
+      .mockResolvedValueOnce("{not valid json");
+
+    const result = await generatePersonalReport(
+      candidates,
+      DEFAULT_CONFIG,
+      COVERAGE_FROM,
+      COVERAGE_TO,
+      "2026-08-03",
+      "zh",
+    );
+
+    expect(result.json.events).toEqual([]);
+  });
+
+  it("degrades to a no-update report when Stage 1 output is unparsable", async () => {
+    const candidates = makeCandidates(1);
+    const mock = vi.mocked(callLlm);
+    mock.mockReset();
+    mock.mockResolvedValueOnce("{not valid json").mockResolvedValueOnce("{not valid json");
+
+    const result = await generatePersonalReport(
+      candidates,
+      DEFAULT_CONFIG,
+      COVERAGE_FROM,
+      COVERAGE_TO,
+      "2026-08-03",
+      "zh",
+    );
+
+    expect(result.json.events).toEqual([]);
+  });
+
+  it("aborts on infrastructure failure by propagating the LLM error", async () => {
+    const candidates = makeCandidates(1);
+    const mock = vi.mocked(callLlm);
+    mock.mockReset();
+    mock.mockRejectedValue(new Error("connection refused"));
+
+    await expect(
+      generatePersonalReport(candidates, DEFAULT_CONFIG, COVERAGE_FROM, COVERAGE_TO, "2026-08-03", "zh"),
+    ).rejects.toThrow("connection refused");
   });
 });
