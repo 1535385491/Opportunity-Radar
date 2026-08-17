@@ -391,7 +391,9 @@ async function main(): Promise<string> {
   const merged = mergeCandidates(balancedPool);
   console.log(`  After merge/dedup: ${merged.length} candidates`);
 
-  // 5. Generate personal report via two-stage LLM
+  // 5. Generate personal report via two-stage LLM.
+  // Quality failures never return null — they degrade to a no-update report.
+  // LLM infrastructure failures propagate as exceptions and abort.
   console.log("  Generating personal report...");
   const reportResult = await generatePersonalReport(
     merged,
@@ -401,12 +403,6 @@ async function main(): Promise<string> {
     dateStr,
     "zh",
   );
-
-  if (!reportResult) {
-    console.error("  Personal report generation failed — aborting without updating state.");
-    process.exitCode = 1;
-    return "failed";
-  }
 
   // 5b. Runtime schema validation — reject old summary schema
   const schemaError = guardReportSchema(reportResult.json);

@@ -1622,7 +1622,7 @@ export async function generatePersonalReport(
   coverageTo: string,
   dateStr: string,
   lang: Lang,
-): Promise<{ json: PersonalReportJson; markdown: string } | null> {
+): Promise<{ json: PersonalReportJson; markdown: string }> {
   const coveredCandidates = filterCandidatesByCoverage(candidates, coverageFrom, coverageTo);
   if (coveredCandidates.length !== candidates.length) {
     console.log(
@@ -1642,11 +1642,20 @@ export async function generatePersonalReport(
   // Stage 1: Filter and merge
   console.log("  [personal] Stage 1: filtering and merging candidates...");
   const filterPrompt = buildFilterPrompt(coveredCandidates, config, coverageFrom, coverageTo);
-  let filterResult = await callLlmJsonWithRepair<FilterResult>(filterPrompt, FILTER_TOKENS);
+  let filterResult: FilterResult;
+  try {
+    filterResult = await callLlmJsonWithRepair<FilterResult>(filterPrompt, FILTER_TOKENS);
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      console.error("  [personal] Stage 1 filter parse failed — falling back to no-update report.");
+      return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
+    }
+    throw e;
+  }
 
   if (!filterResult || !Array.isArray(filterResult.kept)) {
-    console.error("  [personal] Stage 1 filter failed — aborting.");
-    return null;
+    console.error("  [personal] Stage 1 filter failed — falling back to no-update report.");
+    return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
   }
 
   filterResult = normalizeFilterResultAssignments(filterResult, coveredCandidates.length);
@@ -1753,7 +1762,8 @@ export async function generatePersonalReport(
     for (const err of filterValidation.errors) {
       console.error(`    ${err.code}: ${err.message}`);
     }
-    return null;
+    console.error("  [personal] Stage 1 filter invalid — falling back to no-update report.");
+    return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
   }
 
   // --- Underfilled recovery pass ---
@@ -1929,11 +1939,20 @@ export async function generatePersonalReport(
   // Stage 2: Generate report from filtered events
   console.log("  [personal] Stage 2: generating structured report...");
   const reportPrompt = buildReportPrompt(coveredCandidates, filterResult, config, coverageFrom, coverageTo);
-  const json = await callLlmJsonWithRepair<PersonalReportJson>(reportPrompt, REPORT_TOKENS);
+  let json: PersonalReportJson | null = null;
+  try {
+    json = await callLlmJsonWithRepair<PersonalReportJson>(reportPrompt, REPORT_TOKENS);
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      console.error("  [personal] Stage 2 report parse failed — falling back to no-update report.");
+      return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
+    }
+    throw e;
+  }
 
   if (!json || !json.events) {
-    console.error("  [personal] Stage 2 report parse failed.");
-    return null;
+    console.error("  [personal] Stage 2 report parse failed — falling back to no-update report.");
+    return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
   }
 
   // Ensure coverage metadata
@@ -1941,31 +1960,38 @@ export async function generatePersonalReport(
   json.coverageFrom = coverageFrom;
   json.coverageTo = coverageTo;
 
-  // Deterministic tagging: mark project discovery events
-  applyProjectDiscoveryTags(json, discoveryFilterEventIds);
-
   // Validate using per-filterEventId URL sets (not a global whitelist)
   const filterEventUrlMap = buildFilterEventUrlMap(coveredCandidates, filterResult);
   const allKeptUrls = new Set<string>();
   for (const urls of filterEventUrlMap.values()) {
     for (const url of urls) allKeptUrls.add(url);
   }
-  canonicalizeReportSourceUrls(json, allKeptUrls);
-  bindReportEventsToFilterSources(json, filterEventUrlMap);
-  filterAndFillFiveMinuteBrief(
-    json,
-    buildFiveMinuteExcludedFilterEventIds(coveredCandidates, filterResult, config),
-    config.fiveMinuteLimit,
-    0, // Don't pad to 5 — quality over quantity
-  );
-  const validation = validateReport(json, config, allKeptUrls, filterEventUrlMap);
 
+  const postProcess = (draft: PersonalReportJson, briefMinimum: number): void => {
+    // Deterministic tagging: mark project discovery events
+    applyProjectDiscoveryTags(draft, discoveryFilterEventIds);
+    canonicalizeReportSourceUrls(draft, allKeptUrls);
+    bindReportEventsToFilterSources(draft, filterEventUrlMap);
+    filterAndFillFiveMinuteBrief(
+      draft,
+      buildFiveMinuteExcludedFilterEventIds(coveredCandidates, filterResult, config),
+      config.fiveMinuteLimit,
+      briefMinimum,
+    );
+  };
+
+  let finalJson = json;
+  postProcess(finalJson, 0); // Don't pad to 5 — quality over quantity
+
+  let validation = validateReport(finalJson, config, allKeptUrls, filterEventUrlMap);
+
+  // Existing completion path — only when the ONLY blocking errors are
+  // FILTER_EVENT_NOT_MAPPED (Stage 2 omitted some events entirely). Failures
+  // no longer abort: they fall through to repair, then pruning.
   if (!validation.ok) {
-    // Check if the ONLY blocking errors are FILTER_EVENT_NOT_MAPPED
-    const missingIds = extractMissingFilterEventIds(validation, new Set(filterEventUrlMap.keys()), json);
+    const missingIds = extractMissingFilterEventIds(validation, new Set(filterEventUrlMap.keys()), finalJson);
 
     if (missingIds) {
-      // All errors are FILTER_EVENT_NOT_MAPPED — attempt one completion call
       const missingFeidSet = new Set(missingIds);
       console.log(
         "  [personal] Stage 2 omitted " +
@@ -1990,63 +2016,111 @@ export async function generatePersonalReport(
         );
 
         if (completionResult?.events && Array.isArray(completionResult.events)) {
-          const mergedEvents = mergeCompletionEvents(json, completionResult.events, missingFeidSet);
+          const mergedEvents = mergeCompletionEvents(finalJson, completionResult.events, missingFeidSet);
 
           if (mergedEvents) {
-            json.events = mergedEvents;
-
-            // Re-apply project discovery tags after completion merge
-            applyProjectDiscoveryTags(json, discoveryFilterEventIds);
-
-            // Re-run full post-processing and validation
-            canonicalizeReportSourceUrls(json, allKeptUrls);
-            bindReportEventsToFilterSources(json, filterEventUrlMap);
-            filterAndFillFiveMinuteBrief(
-              json,
-              buildFiveMinuteExcludedFilterEventIds(coveredCandidates, filterResult, config),
-              config.fiveMinuteLimit,
-              Math.min(5, config.fiveMinuteLimit),
-            );
-            const revalidation = validateReport(json, config, allKeptUrls, filterEventUrlMap);
+            finalJson.events = mergedEvents;
+            postProcess(finalJson, Math.min(5, config.fiveMinuteLimit));
+            const revalidation = validateReport(finalJson, config, allKeptUrls, filterEventUrlMap);
 
             if (revalidation.ok) {
-              console.log("  [personal] Completion successful; final " + json.events.length + " events.");
+              console.log(
+                "  [personal] Completion successful; final " + finalJson.events.length + " events.",
+              );
+              validation = revalidation;
             } else {
-              console.error("  [personal] Completion revalidation failed:");
+              console.error("  [personal] Completion revalidation failed — falling through to repair:");
               for (const err of revalidation.errors) {
                 console.error("    " + err.code + ": " + err.message);
               }
-              return null;
+              validation = revalidation;
             }
           } else {
-            console.error("  [personal] Completion merge failed — missing IDs not fully covered.");
-            return null;
+            console.error(
+              "  [personal] Completion merge failed — missing IDs not fully covered; falling through to repair.",
+            );
           }
         } else {
-          console.error("  [personal] Completion returned no valid events.");
-          return null;
+          console.error("  [personal] Completion returned no valid events; falling through to repair.");
         }
       } catch {
-        console.error("  [personal] Completion LLM call failed.");
-        return null;
+        console.error("  [personal] Completion LLM call failed; falling through to repair.");
       }
-    } else {
-      // Errors include non-mapping issues — fail closed, no completion attempted
-      console.error("  [personal] Validation failed:");
-      for (const err of validation.errors) {
-        console.error("    " + err.code + ": " + err.message);
-      }
-      return null;
     }
   }
 
-  const markdown = renderMarkdown(json, dateStr, lang);
+  // Targeted repair: feed validation errors back to the LLM (bounded retries)
+  for (let attempt = 1; attempt <= REPORT_REPAIR_MAX_ATTEMPTS && !validation.ok; attempt++) {
+    console.error("  [personal] Validation failed — requesting targeted repair:");
+    for (const err of validation.errors) {
+      console.error("    " + err.code + ": " + err.message);
+    }
+    const repaired = await repairReportWithErrors(
+      finalJson,
+      validation.errors,
+      coveredCandidates,
+      filterResult,
+      config,
+      coverageFrom,
+      coverageTo,
+    );
+    if (!repaired) {
+      console.error(`  [personal] Repair attempt ${attempt} failed — giving up.`);
+      break;
+    }
+    console.error(`  [personal] Repair attempt ${attempt} produced output — re-validating...`);
+    finalJson = repaired;
+    finalJson.generatedAt = new Date().toISOString();
+    finalJson.coverageFrom = coverageFrom;
+    finalJson.coverageTo = coverageTo;
+    postProcess(finalJson, Math.min(5, config.fiveMinuteLimit));
+    validation = validateReport(finalJson, config, allKeptUrls, filterEventUrlMap);
+  }
+
+  // Prune fallback: drop invalid events instead of aborting the pipeline
+  if (!validation.ok) {
+    console.error("  [personal] Validation still failing after repair — pruning invalid events:");
+    for (const err of validation.errors) {
+      console.error("    " + err.code + ": " + err.message);
+    }
+    const pruned = pruneInvalidEvents(finalJson, validation.errors, config);
+    if (!pruned) {
+      console.error("  [personal] All events pruned — falling back to no-update report.");
+      return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
+    }
+    finalJson = pruned.json;
+    finalJson.generatedAt = new Date().toISOString();
+    postProcess(finalJson, Math.min(5, config.fiveMinuteLimit));
+    const relaxedValidation = validateReport(
+      finalJson,
+      config,
+      allKeptUrls,
+      filterEventUrlMap,
+      new Set(pruned.removedFilterEventIds),
+    );
+    if (!relaxedValidation.ok) {
+      console.error("  [personal] Pruned report still invalid — falling back to no-update report:");
+      for (const err of relaxedValidation.errors) {
+        console.error("    " + err.code + ": " + err.message);
+      }
+      return generateNoUpdateReport(config, coverageFrom, coverageTo, dateStr, lang);
+    }
+    console.error(
+      "  [personal] Pruned " +
+        pruned.removedEventIds.length +
+        " event(s) — continuing with " +
+        finalJson.events.length +
+        " event(s).",
+    );
+  }
+
+  const markdown = renderMarkdown(finalJson, dateStr, lang);
 
   // Save both JSON and Markdown
-  saveFile(JSON.stringify(json, null, 2), dateStr, "personal-digest.json");
+  saveFile(JSON.stringify(finalJson, null, 2), dateStr, "personal-digest.json");
   saveFile(markdown, dateStr, lang === "zh" ? "ai-personal.md" : "ai-personal-en.md");
 
-  return { json, markdown };
+  return { json: finalJson, markdown };
 }
 
 /**
@@ -2090,19 +2164,13 @@ export function generateNoUpdateReport(
  * Builds the LLM prompt for Stage 2: generate the final structured report
  * from the filtered and merged events.
  */
-export function buildReportPrompt(
-  candidates: MergedCandidate[],
-  filterResult: FilterResult,
-  config: PersonalReportConfig,
-  coverageFrom: string,
-  coverageTo: string,
-): string {
+/** Builds the per-filterEventId event blocks shared by the report prompt and repair prompts. */
+function buildStage2EventBlocks(candidates: MergedCandidate[], filterResult: FilterResult): string {
   // Build candidate lookup by 1-indexed position
   const candidateLookup = new Map<number, MergedCandidate>();
   candidates.forEach((c, i) => candidateLookup.set(i + 1, c));
 
-  // Build filtered event blocks with full context
-  const eventBlocks = filterResult.kept
+  return filterResult.kept
     .map((event, i) => {
       const keepCandidates = event.keepIds
         .map((id) => candidateLookup.get(Number(id)))
@@ -2153,6 +2221,16 @@ export function buildReportPrompt(
       );
     })
     .join("\n\n");
+}
+
+export function buildReportPrompt(
+  candidates: MergedCandidate[],
+  filterResult: FilterResult,
+  config: PersonalReportConfig,
+  coverageFrom: string,
+  coverageTo: string,
+): string {
+  const eventBlocks = buildStage2EventBlocks(candidates, filterResult);
 
   return `你是一位 AI 技术领域的个人情报分析师。你的任务是将以下已筛选的事件整理成一份结构化的中文个人简报，包含两层：五分钟概览和完整报告。
 
@@ -2192,17 +2270,17 @@ ${eventBlocks}
       "updateKind": "new",
       "status": "已确认",
       "quick": {
-        "what": "一两句事实",
-        "why": "一两句与用户的关系",
-        "impact": "对用户的影响",
+        "what": "必填：一两句事实",
+        "why": "必填：一两句与用户的关系",
+        "impact": "必填：对用户的影响",
         "action": "建议行动"
       },
       "full": {
-        "background": "背景",
-        "evidence": "证据和来源细节",
-        "analysis": "深入分析",
-        "impact": "详细影响分析",
-        "action": "具体可执行建议（如无需行动，写'无需立即行动'）",
+        "background": "必填：背景",
+        "evidence": "必填：证据和来源细节",
+        "analysis": "必填：深入分析",
+        "impact": "必填：详细影响分析",
+        "action": "必填：具体可执行建议（如无需行动，写'无需立即行动'）",
         "limitations": "局限或风险（选填）"
       },
       "candidateIds": ["https://github.com/..."],
@@ -2223,6 +2301,10 @@ ${eventBlocks}
 }
 
 ## 规则
+
+### 最高优先级（违反即不合格，优先级高于其他所有规则）
+0. 每个事件的 full 对象必须包含全部 5 个非空字段：background、evidence、analysis、impact、action。quick 对象的 what、why、impact 也必须非空。这是硬性要求——宁可减少事件数量，也不得输出字段缺失或为空的任何事件。
+1. 输出前必须逐条自检：检查每个事件的 full 和 quick 是否字段完整非空、filterEventId 是否与输入块一致、所有 URL 是否来自对应事件的 Available Sources。发现任何问题都要修正后再输出。
 
 ### 事件筛选
 1. 完整报告至多 ${config.fullReportLimit} 条；质量足够时通常接近目标，信息不足可以更少，不准凑数。
@@ -2263,6 +2345,62 @@ ${eventBlocks}
 27. 五分钟概览的入选门槛更高：必须会改变用户当前行动、决策、能力边界、效率或可靠性。
 28. 非主力工具普通版本更新、首次项目发现、泛讨论/观点文章不得进入五分钟概览。
 29. 五分钟概览可以少于 5 条甚至为空，不得为凑数降低门槛。`;
+}
+
+// ---------------------------------------------------------------------------
+// Stage 2 repair: feed validation errors back to the LLM
+// ---------------------------------------------------------------------------
+
+/** Max targeted-repair attempts after Stage 2 validation fails. */
+export const REPORT_REPAIR_MAX_ATTEMPTS = 2;
+
+/**
+ * Asks the LLM to fix specific validation errors in a draft report. The prompt
+ * carries the error list, the current JSON, and each filterEventId's candidate
+ * context with its URL whitelist (Available Sources), so a repair cannot invent
+ * sources. Returns null only when the repaired output is unparsable; LLM
+ * infrastructure errors propagate (they abort the pipeline by design).
+ */
+export async function repairReportWithErrors(
+  current: PersonalReportJson,
+  errors: ValidateResult["errors"],
+  candidates: MergedCandidate[],
+  filterResult: FilterResult,
+  config: PersonalReportConfig,
+  coverageFrom: string,
+  coverageTo: string,
+  caller: LlmCaller = callLlm,
+): Promise<PersonalReportJson | null> {
+  const errorLines = errors.map((e) => `- [${e.code}] ${e.message}`).join("\n");
+  const eventBlocks = buildStage2EventBlocks(candidates, filterResult);
+  const prompt = `你正在修复一份 AI 个人简报的 JSON。校验器对当前 JSON 报告了以下错误：
+
+${errorLines}
+
+## 当前 JSON
+${JSON.stringify(current, null, 2)}
+
+## 已筛选事件上下文（每个 filterEventId 的候选信息；Available Sources 是该事件唯一允许引用的 URL 白名单）
+${eventBlocks}
+
+## 覆盖时间
+${coverageFrom} ～ ${coverageTo}
+
+## 修复要求
+1. 只修复错误列出的问题，保持其余内容不变。
+2. 错误要求补全事件（如 FILTER_EVENT_NOT_MAPPED）时，必须为对应的 filterEventId 生成内容完整的新事件。
+3. full 对象的 background、evidence、analysis、impact、action 五个字段必须全部非空；quick 的 what、why、impact 必须非空。
+4. 每个事件的 candidateIds 和 sources 只能引用对应事件 Available Sources 中的 URL，禁止编造、禁止引用其他事件的 URL。
+5. 保持事件 id、filterEventId 与当前 JSON 一致；补全事件时使用缺失的 filterEventId。
+6. toolStatus 必须包含全部主力工具：${config.primaryTools.join("、")}。
+7. 输出修复后的完整 JSON（不要包含 markdown 代码块标记），结构与当前 JSON 一致。`;
+
+  try {
+    return await callLlmJsonWithRepair<PersonalReportJson>(prompt, REPORT_TOKENS, caller);
+  } catch (e) {
+    if (e instanceof SyntaxError) return null;
+    throw e;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2612,6 +2750,7 @@ export function validateReport(
   config: PersonalReportConfig,
   candidateUrls: Set<string>,
   filterEventUrlMap?: Map<string, Set<string>>,
+  ignoredFilterEventIds?: Set<string>,
 ): ValidateResult {
   const errors: ValidateResult["errors"] = [];
   const eventIds = new Set<string>();
@@ -2737,6 +2876,7 @@ export function validateReport(
   // --- Check all Stage 1 kept events are mapped to exactly one final event ---
   if (expectedFilterEventIds) {
     for (const feid of expectedFilterEventIds) {
+      if (ignoredFilterEventIds?.has(feid)) continue;
       if (!filterEventIdUsed.has(feid)) {
         errors.push({
           code: "FILTER_EVENT_NOT_MAPPED",
@@ -2879,6 +3019,157 @@ export function validateReport(
   }
 
   return { ok: errors.length === 0, errors };
+}
+
+// ---------------------------------------------------------------------------
+// Fallback pruning: drop events implicated by validation errors and rebuild
+// report structure so the pipeline never aborts on imperfect LLM output.
+// ---------------------------------------------------------------------------
+
+/** Event-level error codes whose implicated events must be dropped. */
+const EVENT_LEVEL_ERROR_CODES = new Set<ValidateErrorCode>([
+  "MISSING_EVENT_ID",
+  "DUPLICATE_EVENT_ID",
+  "MISSING_EVENT_TIME",
+  "INVALID_STATUS",
+  "INVALID_UPDATE_KIND",
+  "MISSING_QUICK_FIELDS",
+  "MISSING_FULL_FIELDS",
+  "MISSING_SOURCE_URL",
+  "FABRICATED_URL",
+  "MISSING_CANDIDATE_IDS",
+  "UNKNOWN_FILTER_EVENT_ID",
+  "SOURCE_LEAKED_FROM_OTHER_FILTER_EVENT",
+  "FILTER_EVENT_MULTI_MAPPED",
+]);
+
+/** Locates the events a validation error implicates, by the title embedded in its message. */
+function matchErrorEvents(err: ValidateResult["errors"][number], events: ReportEvent[]): ReportEvent[] {
+  const byTitle = (title: string): ReportEvent[] => events.filter((evt) => evt.title === title);
+
+  if (err.code === "DUPLICATE_EVENT_ID") {
+    // "duplicate event id: evt-3" — keep the first occurrence, drop later ones
+    const id = err.message.match(/^duplicate event id: (.+)$/)?.[1];
+    if (!id) return [];
+    const matches = events.filter((evt) => evt.id === id);
+    return matches.slice(1);
+  }
+
+  if (err.code === "FILTER_EVENT_MULTI_MAPPED") {
+    // "filterEventId X used by multiple events: evt-1 and evt-2"
+    const ids = [...err.message.matchAll(/\bevt-\d+\b/g)].map((m) => m[0]);
+    return events.filter((evt) => ids.includes(evt.id));
+  }
+
+  if (err.code === "FABRICATED_URL") {
+    // "candidate URL consumed by multiple events: <url> (titleA and titleB)"
+    // — drop the later consumer, keep the first
+    const consumed = err.message.match(/^candidate URL consumed by multiple events: .+ \((.+) and (.+)\)$/);
+    if (consumed) return byTitle(consumed[2]!);
+  }
+
+  const inTitle = err.message.match(/\(in: (.+)\)$/)?.[1];
+  if (inTitle) return byTitle(inTitle);
+
+  // Errors like "event missing id: <title>" carry the title after ": "
+  const tail = err.message.match(/: (.+)$/)?.[1];
+  if (tail) return byTitle(tail);
+
+  return [];
+}
+
+export interface PruneResult {
+  json: PersonalReportJson;
+  removedEventIds: string[];
+  removedFilterEventIds: string[];
+}
+
+/**
+ * Drops every event implicated by event-level validation errors, rebuilds
+ * fullReport / fiveMinuteBrief around the survivors, truncates over-limit
+ * events, and fills missing toolStatus entries deterministically. Returns null
+ * when nothing remains — the caller should produce a no-update report.
+ */
+export function pruneInvalidEvents(
+  json: PersonalReportJson,
+  errors: ValidateResult["errors"],
+  config: PersonalReportConfig,
+): PruneResult | null {
+  const events = json.events ?? [];
+  const removedEventIds = new Set<string>();
+  const removedFilterEventIds = new Set<string>();
+
+  for (const err of errors) {
+    if (!EVENT_LEVEL_ERROR_CODES.has(err.code)) continue;
+    for (const evt of matchErrorEvents(err, events)) {
+      if (!evt.id) {
+        removedEventIds.add(`__no-id-${events.indexOf(evt)}`);
+        continue;
+      }
+      removedEventIds.add(evt.id);
+      if (evt.filterEventId) removedFilterEventIds.add(evt.filterEventId);
+    }
+  }
+
+  // FILTER_EVENT_NOT_MAPPED: the filterEventId itself has no final event.
+  // The missing event cannot be synthesized here — mark it ignored so the
+  // relaxed re-validation does not fail on it again.
+  for (const err of errors) {
+    if (err.code !== "FILTER_EVENT_NOT_MAPPED") continue;
+    const feid = err.message.match(/\b(filter-event-\d+)\b/)?.[1];
+    if (feid) removedFilterEventIds.add(feid);
+  }
+
+  let finalEvents = events.filter((evt) => !removedEventIds.has(evt.id ?? `__no-id-${events.indexOf(evt)}`));
+
+  // Truncate over-limit events (EVENTS_OVER_LIMIT), keeping the first N
+  if (finalEvents.length > config.fullReportLimit) {
+    finalEvents = finalEvents.slice(0, config.fullReportLimit);
+  }
+
+  if (finalEvents.length === 0) return null;
+
+  const keptIds = new Set(finalEvents.map((evt) => evt.id));
+
+  // Rebuild fullReport: drop dangling refs, dedupe, re-attach orphan events
+  const fullGroups: TopicGroup[] = [];
+  for (const group of json.fullReport?.topicGroups ?? []) {
+    const eventIds = [...new Set((group.eventIds ?? []).filter((id) => keptIds.has(id)))];
+    if (eventIds.length > 0) fullGroups.push({ name: group.name, eventIds });
+  }
+  for (const evt of finalEvents) {
+    if (fullGroups.some((g) => g.eventIds.includes(evt.id))) continue;
+    const group = fullGroups.find((g) => g.name === evt.topic);
+    if (group) group.eventIds.push(evt.id);
+    else fullGroups.push({ name: evt.topic || "其他", eventIds: [evt.id] });
+  }
+
+  // Rebuild fiveMinuteBrief: keep only existing events that are in fullReport
+  const fullGroupIds = new Set(fullGroups.flatMap((g) => g.eventIds));
+  const briefGroups: TopicGroup[] = [];
+  for (const group of json.fiveMinuteBrief?.topicGroups ?? []) {
+    const eventIds = [
+      ...new Set((group.eventIds ?? []).filter((id) => keptIds.has(id) && fullGroupIds.has(id))),
+    ];
+    if (eventIds.length > 0) briefGroups.push({ name: group.name, eventIds });
+  }
+
+  const toolStatus: Record<string, string> = { ...(json.toolStatus ?? {}) };
+  for (const tool of config.primaryTools) {
+    if (!toolStatus[tool]) toolStatus[tool] = "本期无重要更新";
+  }
+
+  return {
+    json: {
+      ...json,
+      events: finalEvents,
+      fullReport: { topicGroups: fullGroups },
+      fiveMinuteBrief: { topicGroups: briefGroups },
+      toolStatus,
+    },
+    removedEventIds: [...removedEventIds],
+    removedFilterEventIds: [...removedFilterEventIds],
+  };
 }
 
 // ---------------------------------------------------------------------------
