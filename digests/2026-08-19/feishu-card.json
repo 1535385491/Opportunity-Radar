@@ -1,0 +1,36 @@
+{
+  "header": {
+    "title": {
+      "tag": "plain_text",
+      "content": "📡 agents-radar · 2026-08-19"
+    },
+    "template": "blue"
+  },
+  "elements": [
+    {
+      "tag": "markdown",
+      "content": "**📋 五分钟概览**\n\n1. **OpenAI Codex (rust) v0.148.0 发布，增强会话持久化与工作流**\n   Codex 发布新版，新增了将对话导出为 Markdown、分叉会话以及从恢复选择器中归档/恢复会话的功能。 → 这直接增强了你最关注的 Agent 工作流的可恢复性、持久化和可观测性，让你能更好地管理、审计和重用开发会话。\n2. **Claude Code v2.1.235 发布，修复会话缓存失效与改进输入体验**\n   Claude Code 发布新版本，修复了语言服务器断开导致整个提示缓存失效的关键 bug，并增加了可选的拼写检查功能。 → 此修复直接提升了会话的稳定性和可靠性，避免了因环境波动（如 LSP 重启）导致不必要的性能损失和上下文重传，保障了工具的核心体验。"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**🔧 主力工具状态**\n\n• **codex**：发布 v0.148.0，重大增强了会话持久化、导出与恢复能力。\n• **claude-code**：发布 v2.1.235，修复了关键的会话缓存失效问题，提升了稳定性。"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**📎 查看完整报告**\n\n• [AI 前沿个人简报](https://1535385491.github.io/Opportunity-Radar/#2026-08-19/ai-personal)"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "[🌐 Web UI](https://1535385491.github.io/Opportunity-Radar)  ·  [⊕ RSS](https://1535385491.github.io/Opportunity-Radar/feed.xml)"
+    }
+  ]
+}

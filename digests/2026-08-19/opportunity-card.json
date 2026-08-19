@@ -1,0 +1,30 @@
+{
+  "summary": "OpenAI Codex (rust) v0.148.0 发布，增强会话持久化与工作流：Codex 发布新版，新增了将对话导出为 Markdown、分叉会话以及从恢复选择器中归档/恢复会话的功能。",
+  "signals": [
+    {
+      "title": "OpenAI Codex (rust) v0.148.0 发布，增强会话持久化与工作流",
+      "description": "升级至 v0.148.0，并探索 `/export` 命令和会话恢复功能以优化你的个人项目工作流。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Claude Code v2.1.235 发布，修复会话缓存失效与改进输入体验",
+      "description": "建议升级至 v2.1.235 或更高版本，以获得更稳定的会话体验。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "code-review-graph: 本地代码智能图谱，为AI编码工具优化上下文",
+      "description": "关注此项目。评估其是否能与你现有的基于 Codex/Claude Code 的工作流或 MCP 工具链集成。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "book-to-skill: 将技术书籍PDF转为Claude Code可用技能",
+      "description": "查看项目，理解其转换流程和生成技能的质量。考虑是否能将类似方法应用于你的智能诊断知识库或文档。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "COSP：一种让LLM对自身输出进行评分的提示技巧",
+      "description": "阅读文章，了解 COSP 技巧的具体 prompt 结构，并考虑在你的项目中进行小规模实验。",
+      "report": "ai-personal"
+    }
+  ]
+}
