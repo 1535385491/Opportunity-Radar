@@ -1,0 +1,30 @@
+{
+  "summary": "OpenAI Codex rust-v0.149.0: 交互式 Agent 仪表板与工作目录管理：Codex rust-v0.149.0 版本新增交互式 Agent 仪表板，支持搜索、启动、管理任务，并在 TUI 内新增 `/cd`、`/cwd` 等命令用于管理工作目录。",
+  "signals": [
+    {
+      "title": "OpenAI Codex rust-v0.149.0: 交互式 Agent 仪表板与工作目录管理",
+      "description": "建议立即更新至 rust-v0.149.0 版本，并在个人项目中尝试使用 Agent 仪表板和目录管理命令，评估其对当前工作流的提升。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Claude Code 跨会话消息与模型配置更新 (v2.1.236)",
+      "description": "无需立即行动。可留意 `SendMessage` 的 `notify_when_idle` 功能在未来构建复杂工作流时的潜在应用。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "OpenAI 为前沿模型提供零数据保留选项",
+      "description": "无需立即行动。当用户考虑集成 OpenAI 模型后端处理敏感项目数据时，应主动确认并启用此选项。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "ParadeDB：集成全文搜索与向量检索的 PostgreSQL 扩展",
+      "description": "建议将 ParadeDB 纳入技术雷达，在启动新的需要混合搜索的知识库项目时，将其作为候选方案进行评估。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "AWS Labs GraphRAG Toolkit：图增强 GenAI 应用 Python 工具包",
+      "description": "无需立即行动。可将其作为 GraphRAG 技术落地的参考样本，在相关项目需要复杂关系推理时再深入研究。",
+      "report": "ai-personal"
+    }
+  ]
+}

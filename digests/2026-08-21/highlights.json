@@ -1,0 +1,7 @@
+{
+  "ai-personal": [
+    "OpenAI Codex rust-v0.149.0: 交互式 Agent 仪表板与工作目录管理：Codex rust-v0.149.0 版本新增交互式 Agent 仪表板，支持搜索、启动、管理任务，并在 TUI 内新增 `/cd`、`/cwd` 等命令用于管理工作目录。",
+    "Claude Code 跨会话消息与模型配置更新 (v2.1.236)：Claude Code v2.1.236 引入 `ANTHROPIC_DEFAULT_MODEL` 环境变量以设置新会话默认模型，并为跨会话 `SendMessage` 添加了 `notify_when_idle` 选项。",
+    "OpenAI 为前沿模型提供零数据保留选项：OpenAI 宣布为其前沿模型提供“零数据保留”选项。"
+  ]
+}
