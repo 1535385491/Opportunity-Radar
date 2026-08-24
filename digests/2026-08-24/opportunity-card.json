@@ -1,0 +1,30 @@
+{
+  "summary": "zilliztech/memsearch: 为 Claude Code、Codex 等 AI Agent 提供统一持久记忆层：zilliztech 发布了一个名为 memsearch 的开源项目，旨在为 Claude Code、Codex 等 AI Agent 提供一个统一的、基于 Markdown 和 Milvus 的持久记忆层。",
+  "signals": [
+    {
+      "title": "zilliztech/memsearch: 为 Claude Code、Codex 等 AI Agent 提供统一持久记忆层",
+      "description": "建议初步评估其架构（Markdown 用于人类可读性，Milvus 用于向量检索）是否与你的技术栈（Windows， 个人项目）兼容，并关注其实际集成案例。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Codex 与 Claude Code 使用体验对比分析",
+      "description": "阅读原文及高赞评论，重点关注在个人项目开发、代码理解与生成、工作流集成等方面的具体反馈，而非泛泛而谈的观点。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "letta-ai/letta-code: 有状态、具备记忆与身份的 AI Agent 框架",
+      "description": "建议了解 MemGPT 的核心理念，并对比 letta-code 与 memsearch 在架构哲学和实现方式上的异同，判断哪条路线更符合你的项目需求。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Claude Code v2.1.239: 新增成本估算功能（含数据驻留溢价）与全屏渲染支持扩展",
+      "description": "无需立即行动，此功能已随更新可用。建议在下次使用 Claude Code 进行可能产生较多 token 消耗的任务前，尝试 `/cost` 命令或 `--max-budget-usd` 参数以熟悉其效果。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "PlannerCritic 系列：Agent 规划-批判框架中的可恢复性与对抗性评测经验",
+      "description": "建议阅读这两篇文章，重点学习关于如何识别和处理 Agent 规划中的重复性错误，以及如何设计批判者（Critic）的提示词来平衡其攻击性，从而获得有效的反馈。",
+      "report": "ai-personal"
+    }
+  ]
+}

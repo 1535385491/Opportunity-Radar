@@ -1,0 +1,7 @@
+{
+  "ai-personal": [
+    "Claude Code v2.1.239: 新增成本估算功能（含数据驻留溢价）与全屏渲染支持扩展：Claude Code 发布 v2.1.239 版本，新增了成本估算功能（`/cost` 命令、状态栏、`--max-budget-usd` 参数），并明确包含了数据驻留工作区的 1.1x 溢价系数。",
+    "Codex 与 Claude Code 使用体验对比分析：一篇在 Hacker News 上引起广泛讨论（230 points， 244 comments）的文章，详细对比了作者一周内密集使用 Codex 和 Claude Code 的体验。",
+    "PlannerCritic 系列：Agent 规划-批判框架中的可恢复性与对抗性评测经验：Debashish Ghosal 在 Dev.to 上分享了构建 PlannerCritic（一个让 LLM 扮演规划者和批判者角色的开源引擎）的两篇实践文章，探讨了规划错误的可恢复性及调整批判者策略对系统行为的影响。"
+  ]
+}

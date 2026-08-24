@@ -1,0 +1,36 @@
+{
+  "header": {
+    "title": {
+      "tag": "plain_text",
+      "content": "📡 agents-radar · 2026-08-24"
+    },
+    "template": "blue"
+  },
+  "elements": [
+    {
+      "tag": "markdown",
+      "content": "**📋 五分钟概览**\n\n1. **Claude Code v2.1.239: 新增成本估算功能（含数据驻留溢价）与全屏渲染支持扩展**\n   Claude Code 发布 v2.1.239 版本，新增了成本估算功能（`/cost` 命令、状态栏、`--max-budget-usd` 参数），并明确包含了数据驻留工作区的 1.1x 溢价系数。 → 成本的可预测性和可控性是使用工具的重要可靠性指标。此更新让你能更精确地监控和控制基于 Mimo API 等后端的开销，尤其在涉及数据驻留（可能隐含在你的使用场景中）时。\n2. **Codex 与 Claude Code 使用体验对比分析**\n   一篇在 Hacker News 上引起广泛讨论（230 points， 244 comments）的文章，详细对比了作者一周内密集使用 Codex 和 Claude Code 的体验。 → 这正是你同时使用两款主力工具时，为优化个人工作流可能需要的深度对比视角，涵盖了实际开发场景下的优劣、效率和潜在问题。\n3. **PlannerCritic 系列：Agent 规划-批判框架中的可恢复性与对抗性评测经验**\n   Debashish Ghosal 在 Dev.to 上分享了构建 PlannerCritic（一个让 LLM 扮演规划者和批判者角色的开源引擎）的两篇实践文章，探讨了规划错误的可恢复性及调整批判者策略对系统行为的影响。 → 这些内容直接对应你关注的‘可恢复、可观测的 Agent 工作流’和‘Agent 评测方法’，提供了关于如何调试、评估和提升复杂 Agent 系统可靠性的第一手工程经验。"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**🔧 主力工具状态**\n\n• **codex**：社区讨论活跃，提供工作流参考\n• **claude-code**：新增成本估算功能，强化预算控制"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**📎 查看完整报告**\n\n• [AI 前沿个人简报](https://1535385491.github.io/Opportunity-Radar/#2026-08-24/ai-personal)"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "[🌐 Web UI](https://1535385491.github.io/Opportunity-Radar)  ·  [⊕ RSS](https://1535385491.github.io/Opportunity-Radar/feed.xml)"
+    }
+  ]
+}
