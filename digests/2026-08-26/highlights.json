@@ -1,0 +1,8 @@
+{
+  "ai-personal": [
+    "OpenAI恢复ChatGPT Plus用户的Codex与Work五小时使用限制：据报道，OpenAI已将ChatGPT Plus用户使用Codex和Work功能的频率限制恢复为每五小时一个周期。",
+    "Claude Code v2.1.246: 增强Bash通配符安全警告与Auto模式权限管理：Claude Code客户端更新，在启动时对包含子命令通配符的Bash允许规则发出警告，并新增了用于查看和编辑自动模式分类器规则的标签页。",
+    "Claude Code v2.1.245: 修复在特定Linux发行版上的启动崩溃：Claude Code客户端发布补丁，修复了在搭载glibc 2.44的Linux发行版（如Arch Linux）上启动时崩溃的问题。",
+    "Prime Agent：一个用于长期评估与编码工作流的自改进RLM框架：一篇学术论文提出了Prime Agent，一个开源框架，通过持久化的IPython REPL和递归机制，支持长时间运行的编码Agent进行评估和工作流。"
+  ]
+}

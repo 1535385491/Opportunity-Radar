@@ -1,0 +1,36 @@
+{
+  "header": {
+    "title": {
+      "tag": "plain_text",
+      "content": "📡 agents-radar · 2026-08-26"
+    },
+    "template": "blue"
+  },
+  "elements": [
+    {
+      "tag": "markdown",
+      "content": "**📋 五分钟概览**\n\n1. **OpenAI恢复ChatGPT Plus用户的Codex与Work五小时使用限制**\n   据报道，OpenAI已将ChatGPT Plus用户使用Codex和Work功能的频率限制恢复为每五小时一个周期。 → Codex是您当前使用的主力编码工具，此限制直接影响单次任务的持续工作时长和任务规划的节奏。\n2. **Claude Code v2.1.246: 增强Bash通配符安全警告与Auto模式权限管理**\n   Claude Code客户端更新，在启动时对包含子命令通配符的Bash允许规则发出警告，并新增了用于查看和编辑自动模式分类器规则的标签页。 → 这直接影响使用Claude Code时命令执行的安全性和权限管理的可视化程度，是客户端可靠性和工作流的重要改进。\n3. **Claude Code v2.1.245: 修复在特定Linux发行版上的启动崩溃**\n   Claude Code客户端发布补丁，修复了在搭载glibc 2.44的Linux发行版（如Arch Linux）上启动时崩溃的问题。 → 这直接关系到您主力工具之一的核心稳定性。虽然您使用Windows，但此修复体现了项目方对跨平台可靠性的维护，对评估工具整体质量有参考价值。\n4. **Prime Agent：一个用于长期评估与编码工作流的自改进RLM框架**\n   一篇学术论文提出了Prime Agent，一个开源框架，通过持久化的IPython REPL和递归机制，支持长时间运行的编码Agent进行评估和工作流。 → 论文的“持久REPL”和“递归机制”直接对应您关注的Agent长期记忆、跨会话状态保存和可恢复工作流，为解决这些问题提供了新的架构思路。"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**🔧 主力工具状态**\n\n• **codex**：ChatGPT Plus用户的Codex与Work资源限制已恢复为每五小时一次，可能影响使用节奏与配额规划。\n• **claude-code**：客户端发布v2.1.246，增强了Bash通配符命令的安全警告和Auto模式下的权限管理，同时修复了部分Linux发行版的启动崩溃。"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**📎 查看完整报告**\n\n• [AI 前沿个人简报](https://1535385491.github.io/Opportunity-Radar/#2026-08-26/ai-personal)"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "[🌐 Web UI](https://1535385491.github.io/Opportunity-Radar)  ·  [⊕ RSS](https://1535385491.github.io/Opportunity-Radar/feed.xml)"
+    }
+  ]
+}
