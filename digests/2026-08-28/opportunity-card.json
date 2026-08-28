@@ -1,0 +1,30 @@
+{
+  "summary": "Claude Code v2.1.248 引入 `--restricted` 安全模式：Claude Code 新增 `--restricted` 模式，该模式移除了执行命令/代码的内置工具，将文件操作限制在工作目录内，并拒绝 `bypassPermissions`。",
+  "signals": [
+    {
+      "title": "Claude Code v2.1.248 引入 `--restricted` 安全模式",
+      "description": "立即了解并评估在需要更高安全性的项目中使用 `--restricted` 模式。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "OpenAI Codex 修复远程压缩对保留图像的Token预算计算问题",
+      "description": "无需立即行动，此为自动修复。您可以更放心地在Codex中处理多模态代码项目。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Beyond F1：AI模型安全扫描器的覆盖与故障恢复评估研究",
+      "description": "阅读论文，关注其评估框架和发现的扫描器盲点，用于指导您对工具链的安全性评审。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Claude Code v2.1.247 增加会话内反馈报告工具 `SendFeedback`",
+      "description": "了解如何在Claude Code中启用和使用此反馈功能（可通过`/feedback`命令）。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "CorporateBench：基于真实企业时序知识库的大规模问答基准",
+      "description": "关注此基准测试集，评估其是否可用于您个人的“智能诊断”项目的性能评估。",
+      "report": "ai-personal"
+    }
+  ]
+}

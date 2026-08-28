@@ -1,0 +1,8 @@
+{
+  "ai-personal": [
+    "Claude Code v2.1.248 引入 `--restricted` 安全模式：Claude Code 新增 `--restricted` 模式，该模式移除了执行命令/代码的内置工具，将文件操作限制在工作目录内，并拒绝 `bypassPermissions`。",
+    "Beyond F1：AI模型安全扫描器的覆盖与故障恢复评估研究：一篇研究论文系统评估了ModelScan等AI安全扫描器的覆盖率和故障恢复能力，指出了它们的盲点和失败模式。",
+    "OpenAI Codex 修复远程压缩对保留图像的Token预算计算问题：Codex修复了远程上下文压缩时未将保留的图像计入Token预算的Bug，现在会主动修剪较旧的图像以满足预算。",
+    "Claude Code v2.1.247 增加会话内反馈报告工具 `SendFeedback`：Claude Code新增`SendFeedback`工具，允许Claude在会话出错时为用户起草反馈报告。"
+  ]
+}
