@@ -17,9 +17,7 @@ vi.mock("../providers/index.ts", async (importOriginal) => {
   return {
     ...orig,
     createProvider: (name?: string) =>
-      name === "deepseek"
-        ? { name: "deepseek", call: mockFallbackCall }
-        : { name: "mock", call: mockCall },
+      name === "deepseek" ? { name: "deepseek", call: mockFallbackCall } : { name: "mock", call: mockCall },
   };
 });
 
