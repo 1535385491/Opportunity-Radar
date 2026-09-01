@@ -15,9 +15,16 @@ export const LLM_TOKENS_DEFAULT = 4096;
 export const LLM_TOKENS_TRENDING = 6144;
 export const LLM_TOKENS_WEB = 8192;
 export const LLM_TOKENS_ROLLUP = 8192;
-import { type LlmProvider, createProvider } from "./providers/index.ts";
+import { type LlmProvider, type ProviderName, createProvider } from "./providers/index.ts";
 
 const provider: LlmProvider = createProvider();
+
+const fallbackProvider: LlmProvider | null = (() => {
+  const name = process.env["LLM_FALLBACK_PROVIDER"] as ProviderName | undefined;
+  if (!name) return null;
+  console.log(`[providers] Fallback LLM provider: ${name}`);
+  return createProvider(name);
+})();
 
 // ---------------------------------------------------------------------------
 // Concurrency limiter — prevents rate-limit (429) errors when many LLM calls
@@ -57,12 +64,12 @@ export function is429(err: unknown): boolean {
   return (err as { status?: number })?.status === 429 || String(err).includes("429");
 }
 
-export async function callLlm(prompt: string, maxTokens = LLM_TOKENS_DEFAULT): Promise<string> {
+async function callWithRetry(target: LlmProvider, prompt: string, maxTokens: number): Promise<string> {
   for (let attempt = 0; ; attempt++) {
     await acquireSlot();
     let released = false;
     try {
-      return await provider.call(prompt, maxTokens);
+      return await target.call(prompt, maxTokens);
     } catch (err) {
       if (attempt < MAX_RETRIES && is429(err)) {
         releaseSlot();
@@ -76,6 +83,19 @@ export async function callLlm(prompt: string, maxTokens = LLM_TOKENS_DEFAULT): P
     } finally {
       if (!released) releaseSlot();
     }
+  }
+}
+
+export async function callLlm(prompt: string, maxTokens = LLM_TOKENS_DEFAULT): Promise<string> {
+  try {
+    return await callWithRetry(provider, prompt, maxTokens);
+  } catch (primaryErr) {
+    if (!fallbackProvider) throw primaryErr;
+    const status = (primaryErr as { status?: unknown })?.status;
+    const statusSuffix = typeof status === "number" ? ` with status ${status}` : "";
+    console.error(`[llm] Primary provider (${provider.name}) failed${statusSuffix}.`);
+    console.error(`[llm] Falling back to ${fallbackProvider.name}...`);
+    return callWithRetry(fallbackProvider, prompt, maxTokens);
   }
 }
 

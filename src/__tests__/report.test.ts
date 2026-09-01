@@ -7,15 +7,19 @@ import path from "node:path";
 // in report.ts uses our controllable mock instead of a real SDK client.
 // ---------------------------------------------------------------------------
 
-const { mockCall } = vi.hoisted(() => ({
+const { mockCall, mockFallbackCall } = vi.hoisted(() => ({
   mockCall: vi.fn<(prompt: string, maxTokens: number) => Promise<string>>(),
+  mockFallbackCall: vi.fn<(prompt: string, maxTokens: number) => Promise<string>>(),
 }));
 
 vi.mock("../providers/index.ts", async (importOriginal) => {
   const orig = await importOriginal<typeof import("../providers/index.ts")>();
   return {
     ...orig,
-    createProvider: () => ({ name: "mock", call: mockCall }),
+    createProvider: (name?: string) =>
+      name === "deepseek"
+        ? { name: "deepseek", call: mockFallbackCall }
+        : { name: "mock", call: mockCall },
   };
 });
 
@@ -28,6 +32,11 @@ import {
   setDryRunMode,
   isDryRunMode,
 } from "../report.ts";
+
+async function importReportWithFallback() {
+  vi.resetModules();
+  return import("../report.ts");
+}
 
 // ---------------------------------------------------------------------------
 // is429
@@ -206,9 +215,12 @@ describe("callLlm", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     mockCall.mockReset();
+    mockFallbackCall.mockReset();
   });
 
   afterEach(() => {
+    delete process.env["LLM_FALLBACK_PROVIDER"];
+    vi.resetModules();
     vi.useRealTimers();
   });
 
@@ -273,6 +285,50 @@ describe("callLlm", () => {
 
     await expect(callLlm("prompt")).rejects.toThrow("server error");
     expect(mockCall).toHaveBeenCalledOnce();
+  });
+
+  it("uses the configured fallback after the primary provider rejects an authentication error", async () => {
+    process.env["LLM_FALLBACK_PROVIDER"] = "deepseek";
+    mockCall.mockRejectedValueOnce(Object.assign(new Error("Invalid API Key"), { status: 401 }));
+    mockFallbackCall.mockResolvedValueOnce("fallback response");
+
+    const { callLlm: callWithFallback } = await importReportWithFallback();
+
+    await expect(callWithFallback("prompt", 1024)).resolves.toBe("fallback response");
+    expect(mockCall).toHaveBeenCalledWith("prompt", 1024);
+    expect(mockCall).toHaveBeenCalledTimes(1);
+    expect(mockFallbackCall).toHaveBeenCalledWith("prompt", 1024);
+  });
+
+  it("does not write primary error details containing a secret to fallback logs", async () => {
+    process.env["LLM_FALLBACK_PROVIDER"] = "deepseek";
+    const secret = "primary-api-key-that-must-not-appear";
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockCall.mockRejectedValueOnce(new Error(`Mimo rejected apiKey=${secret}`));
+    mockFallbackCall.mockResolvedValueOnce("fallback response");
+
+    const { callLlm: callWithFallback } = await importReportWithFallback();
+
+    await expect(callWithFallback("prompt", 1024)).resolves.toBe("fallback response");
+    expect(errorSpy.mock.calls.flat().join(" ")).not.toContain(secret);
+    errorSpy.mockRestore();
+  });
+
+  it("uses the fallback after the primary provider exhausts 429 retries", async () => {
+    process.env["LLM_FALLBACK_PROVIDER"] = "deepseek";
+    const rateLimitError = Object.assign(new Error("rate limited"), { status: 429 });
+    mockCall.mockRejectedValue(rateLimitError);
+    mockFallbackCall.mockResolvedValueOnce("fallback response");
+
+    const { callLlm: callWithFallback } = await importReportWithFallback();
+    const result = callWithFallback("prompt", 1024);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    await expect(result).resolves.toBe("fallback response");
+    expect(mockCall).toHaveBeenCalledTimes(4);
+    expect(mockFallbackCall).toHaveBeenCalledWith("prompt", 1024);
   });
 
   it("does not leak concurrency slots on 429 retries", async () => {

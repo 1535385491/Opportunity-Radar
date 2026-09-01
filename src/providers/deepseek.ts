@@ -14,8 +14,13 @@ export class DeepSeekProvider extends OpenAICompatibleProvider {
   readonly name = "deepseek";
 
   constructor(opts?: { apiKey?: string; model?: string }) {
+    const apiKey = opts?.apiKey ?? process.env["DEEPSEEK_API_KEY"];
+    if (!apiKey) {
+      throw new Error("Missing DEEPSEEK_API_KEY for DeepSeek provider");
+    }
+
     super({
-      apiKey: opts?.apiKey ?? process.env["DEEPSEEK_API_KEY"],
+      apiKey,
       baseURL: DEEPSEEK_BASE_URL,
       model: opts?.model ?? process.env["DEEPSEEK_MODEL"] ?? "deepseek-chat",
     });

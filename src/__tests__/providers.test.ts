@@ -4,6 +4,7 @@ import {
   OpenAIProvider,
   GitHubCopilotProvider,
   OpenRouterProvider,
+  DeepSeekProvider,
   createProvider,
   VALID_PROVIDER_NAMES,
   type LlmProvider,
@@ -311,6 +312,19 @@ describe("OpenRouterProvider", () => {
     const p = new OpenRouterProvider({ apiKey: "k" });
     await expect(p.call("prompt", 100)).rejects.toThrow("Unexpected empty response from openrouter");
   });
+});
+
+// ---------------------------------------------------------------------------
+// DeepSeekProvider
+// ---------------------------------------------------------------------------
+
+describe("DeepSeekProvider", () => {
+  it(
+    "rejects a missing DeepSeek key instead of using OPENAI_API_KEY",
+    withEnv({ DEEPSEEK_API_KEY: undefined, OPENAI_API_KEY: "mimo-primary-key" }, () => {
+      expect(() => new DeepSeekProvider()).toThrow("DEEPSEEK_API_KEY");
+    }),
+  );
 });
 
 // ---------------------------------------------------------------------------
