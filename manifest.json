@@ -1,6 +1,12 @@
 {
-  "generated": "2026-09-01T13:57:55.165Z",
+  "generated": "2026-09-02T03:44:57.658Z",
   "dates": [
+    {
+      "date": "2026-09-02",
+      "reports": [
+        "ai-personal"
+      ]
+    },
     {
       "date": "2026-09-01",
       "reports": [
