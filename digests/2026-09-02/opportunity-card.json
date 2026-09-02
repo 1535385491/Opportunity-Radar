@@ -1,0 +1,30 @@
+{
+  "summary": "Claude Code v2.1.257 引入 Fable 5.1 模型及时间格式设置；v2.1.258 修复远程/定时会话错误：Claude Code v2.1.257 新增 Fable 5.1 模型（支持 1M 上下文）和时间格式设置；v2.1.258 修复了远程/定时会话因权限批准重发导致报错的问题。",
+  "signals": [
+    {
+      "title": "Claude Code v2.1.257 引入 Fable 5.1 模型及时间格式设置；v2.1.258 修复远程/定时会话错误",
+      "description": "更新到 v2.1.258 并验证定时/远程会话场景；通过 mimo 测试 Fable 5.1 的可用性和性能。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "OpenAI Codex rust-v0.152.1 修复 Guardian 审批对 Node REPL 策略的遵循问题",
+      "description": "更新至最新版本，并检查你的审批策略配置是否在更新后按预期生效。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "自适应关键 Token 感知检索：用于仓库级代码生成的新方法",
+      "description": "阅读论文全文，评估其检索策略是否可借鉴到你的 RAG 实现中。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Athena-Public — 本地优先 agentic PKM，支持持久记忆和跨 LLM 治理",
+      "description": "前往 GitHub 仓库了解项目状态和文档，评估其架构设计是否可借鉴。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Google 经验分享：如何设计可信任的 AI 评测",
+      "description": "阅读文章，提取可操作的评测设计原则。",
+      "report": "ai-personal"
+    }
+  ]
+}

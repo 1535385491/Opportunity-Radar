@@ -1,0 +1,20 @@
+# 飞书卡片预览 — 2026-09-02
+
+以下内容将发送到飞书群：
+
+**📋 五分钟概览**
+1. **Claude Code v2.1.257 引入 Fable 5.1 模型及时间格式设置；v2.1.258 修复远程/定时会话错误**
+   Claude Code v2.1.257 新增 Fable 5.1 模型（支持 1M 上下文）和时间格式设置；v2.1.258 修复了远程/定时会话因权限批准重发导致报错的问题。 → Claude Code 是你的主力工具，远程/定时会话的可靠性直接影响自动化工作流；Fable 5.1 需确认是否可通过 mimo 后端使用。
+2. **OpenAI Codex rust-v0.152.1 修复 Guardian 审批对 Node REPL 策略的遵循问题**
+   Codex rust-v0.152.1 修复了 Guardian 审批流程未正确遵循 Node REPL 策略（通过模型元数据提供）的问题。 → Codex 是你的主力工具，审批策略的正确执行直接影响工具调用的安全性和可控性。
+3. **自适应关键 Token 感知检索：用于仓库级代码生成的新方法**
+   一篇新论文提出 Adaptive Critical Token-Aware Retrieval 方法，用于解决仓库级代码生成中的上下文超长与检索低效问题。 → 直接关联你关注的 Code RAG、代码上下文管理和 RAG 研究方向。
+4. **Google 经验分享：如何设计可信任的 AI 评测**
+   Google AI 团队的开发者发布文章，分享为 Google 产品构建 Agent Skills 评测套件的实战经验。 → 你高优先级关注 Agent 评测方法，该文提供来自一线团队的评测设计实践。
+
+**🔧 主力工具状态**
+• **codex**：rust-v0.152.1 修复了 Guardian 审批对 Node REPL 策略的遵循问题，审批控制更可靠
+• **claude-code**：v2.1.257 新增 Fable 5.1 模型及时间格式设置；v2.1.258 修复远程/定时会话空内容错误
+
+**📎 查看完整报告**
+• https://1535385491.github.io/Opportunity-Radar/#2026-09-02/ai-personal
