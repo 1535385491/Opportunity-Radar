@@ -1,0 +1,36 @@
+{
+  "header": {
+    "title": {
+      "tag": "plain_text",
+      "content": "📡 agents-radar · 2026-09-07"
+    },
+    "template": "blue"
+  },
+  "elements": [
+    {
+      "tag": "markdown",
+      "content": "**📋 五分钟概览**\n\n1. **Claude Code v2.1.261 新增组织策略诊断与输出限制配置**\n   Claude Code v2.1.261 在 /status 和 claude doctor 中添加了组织策略加载失败的原因说明，并新增 bashOutputMaxChars 和 taskOutputMaxChars 设置调高命令输出截断上限。 → Claude Code 是你的主力工具；输出截断上限直接影响处理长输出命令时的可靠性和工作流完整性。\n2. **OpenAI Codex rust-v0.153.4 修复模型选择器并使 Astra 成为默认模型**\n   Codex rust-v0.153.4 修复了 Astra 在模型选择器中的可见性问题，并使 Astra 成为捆绑默认模型——当没有显式配置模型时使用 Astra。 → Codex 是你的主力工具且你关注模型路由和第三方后端兼容性；此变更改变了无显式配置时的模型选择行为。\n3. **LLM 智能体记忆迁移性研究：模型升级后记忆持久化问题**\n   一项来自 ArXiv 的对照研究（2609.05339）发现：智能体在模型升级后即使保留同一记忆存储，仍可能因新模型对旧笔记的解读差异、混合嵌入版本导致检索失效、缺乏原始证据而无法修复记忆。 → 直接关联你关注的 Agent 长期记忆、跨会话记忆和记忆系统评测方向；研究结论可迁移到当前智能体记忆设计中的模型升级场景。\n4. **WearableQA：真实世界穿戴设备数据的健康推理评测基准**\n   WearableQA 是一个新的评测基准，包含 4,084 道 10 选 1 多选题，用于评测 AI 系统能否对真实用户长时间穿戴设备记录进行推理和健康分析。 → 直接对应你关注的时序数据、智能诊断方向；该基准可作为评测方法参考用于验证你的诊断项目。"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**🔧 主力工具状态**\n\n• **codex**：v0.153.4 修复了模型选择器并将 Astra 设为捆绑默认模型，影响无显式配置时的模型路由行为。\n• **claude-code**：v2.1.261 新增组织策略诊断与输出截断上限配置，允许提高命令和任务输出的最大字符数。"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**📎 查看完整报告**\n\n• [AI 前沿个人简报](https://1535385491.github.io/Opportunity-Radar/#2026-09-07/ai-personal)"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "[🌐 Web UI](https://1535385491.github.io/Opportunity-Radar)  ·  [⊕ RSS](https://1535385491.github.io/Opportunity-Radar/feed.xml)"
+    }
+  ]
+}

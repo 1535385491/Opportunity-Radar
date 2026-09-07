@@ -1,0 +1,8 @@
+{
+  "ai-personal": [
+    "Claude Code v2.1.261 新增组织策略诊断与输出限制配置：Claude Code v2.1.261 在 /status 和 claude doctor 中添加了组织策略加载失败的原因说明，并新增 bashOutputMaxChars 和 taskOutputMaxChars 设置调高命令输出截断上限。",
+    "OpenAI Codex rust-v0.153.4 修复模型选择器并使 Astra 成为默认模型：Codex rust-v0.153.4 修复了 Astra 在模型选择器中的可见性问题，并使 Astra 成为捆绑默认模型——当没有显式配置模型时使用 Astra。",
+    "LLM 智能体记忆迁移性研究：模型升级后记忆持久化问题：一项来自 ArXiv 的对照研究（2609.05339）发现：智能体在模型升级后即使保留同一记忆存储，仍可能因新模型对旧笔记的解读差异、混合嵌入版本导致检索失效、缺乏原始证据而无法修复记忆。",
+    "WearableQA：真实世界穿戴设备数据的健康推理评测基准：WearableQA 是一个新的评测基准，包含 4,084 道 10 选 1 多选题，用于评测 AI 系统能否对真实用户长时间穿戴设备记录进行推理和健康分析。"
+  ]
+}

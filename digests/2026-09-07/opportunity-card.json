@@ -1,0 +1,30 @@
+{
+  "summary": "LLM 智能体记忆迁移性研究：模型升级后记忆持久化问题：一项来自 ArXiv 的对照研究（2609.05339）发现：智能体在模型升级后即使保留同一记忆存储，仍可能因新模型对旧笔记的解读差异、混合嵌入版本导致检索失效、缺乏原始证据而无法修复记忆。",
+  "signals": [
+    {
+      "title": "LLM 智能体记忆迁移性研究：模型升级后记忆持久化问题",
+      "description": "阅读该论文，评估当前项目的记忆存储格式和嵌入版本管理方式，为未来模型升级预留迁移方案。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Claude Code v2.1.261 新增组织策略诊断与输出限制配置",
+      "description": "查看 v2.1.261 更新日志，评估当前 settings.json 中是否需调高 bashOutputMaxChars 或 taskOutputMaxChars。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "OpenAI Codex rust-v0.153.4 修复模型选择器并使 Astra 成为默认模型",
+      "description": "检查 Codex 配置中是否显式指定了模型；若依赖默认模型且使用 mimo 兼容层，需测试 Astra 作为默认模型时是否仍正确路由到实际后端。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "WearableQA：真实世界穿戴设备数据的健康推理评测基准",
+      "description": "阅读论文摘要，评估是否将 WearableQA 作为诊断项目的评测集之一。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "《从零开始构建智能体》中文教程（hello-agents）",
+      "description": "浏览该教程目录，看是否覆盖 RAG、Context Engineering、记忆管理等你正在关注的子方向。",
+      "report": "ai-personal"
+    }
+  ]
+}
