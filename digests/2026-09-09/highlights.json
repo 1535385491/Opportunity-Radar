@@ -1,0 +1,6 @@
+{
+  "ai-personal": [
+    "Claude Code v2.1.266 修复 LLM-gateway/proxy 配置回归：Claude Code v2.1.266 修复了 v2.1.265 引入的回归问题：`CLAUDE_CODE_USE_GATEWAY` 环境变量在未同时设置 `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN` 时，会强制要求 Cloud-gateway 登录。",
+    "临床 AI 系统与医生及前沿语言模型在初级诊疗中的对比研究：一项新研究对比了临床 AI 系统 Doctorina、8 名医生和 4 个前沿语言模型在 150 个波兰语初级诊疗模拟案例中的表现，Doctorina 实现了 82.0% 的 Top-1 一致性，研究强调应同时评估诊断和管理建议。"
+  ]
+}

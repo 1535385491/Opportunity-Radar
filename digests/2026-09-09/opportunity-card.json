@@ -1,0 +1,30 @@
+{
+  "summary": "Claude Code v2.1.266 修复 LLM-gateway/proxy 配置回归：Claude Code v2.1.266 修复了 v2.1.265 引入的回归问题：`CLAUDE_CODE_USE_GATEWAY` 环境变量在未同时设置 `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN` 时，会强制要求 Cloud-gateway 登录。",
+  "signals": [
+    {
+      "title": "Claude Code v2.1.266 修复 LLM-gateway/proxy 配置回归",
+      "description": "升级到 v2.1.266，并验证现有 gateway/proxy 配置（含 `CLAUDE_CODE_USE_GATEWAY` 及相关环境变量）是否正常工作。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "AI Agent Harness 工程精选列表（awesome-harness-engineering）",
+      "description": "浏览该列表，按你的高优先级专题（记忆、上下文管理、MCP、可观测性）筛选收藏有价值的条目。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "临床 AI 系统与医生及前沿语言模型在初级诊疗中的对比研究",
+      "description": "阅读论文全文提取评测方法细节，参考其诊断+管理+信息采集三层评测框架来对照你的智能诊断评估方案。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "LLM 上下文理解能力评测研究",
+      "description": "检索该论文的评测方法细节，比对你现有评测体系是否需要补充上下文理解维度测试。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Gander：统一全模态感知/实时交互/Agent 能力的端到端模型",
+      "description": "不需要立即行动；可选择性追踪该方向的后续进展以评估是否可能影响长期多模态取证和 RAG 摄取方向。",
+      "report": "ai-personal"
+    }
+  ]
+}
