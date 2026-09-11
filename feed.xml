@@ -6,7 +6,27 @@
     <description>AI 开源生态每日简报 · Daily AI ecosystem digest</description>
     <language>zh-CN</language>
     <atom:link href="https://1535385491.github.io/Opportunity-Radar/feed.xml" rel="self" type="application/rss+xml"/>
-    <lastBuildDate>Wed, 09 Sep 2026 03:56:44 +0000</lastBuildDate>
+    <lastBuildDate>Fri, 11 Sep 2026 03:52:52 +0000</lastBuildDate>
+    <item>
+      <title>AI 前沿个人简报 2026-09-11</title>
+      <link>https://1535385491.github.io/Opportunity-Radar/#2026-09-11/ai-personal</link>
+      <guid isPermaLink="true">https://1535385491.github.io/Opportunity-Radar/#2026-09-11/ai-personal</guid>
+      <pubDate>Fri, 11 Sep 2026 00:00:00 +0000</pubDate>
+      <description>AI 前沿个人简报 2026-09-11 覆盖时间：2026-09-09T03:54:31.589Z ～ 2026-09-11T03:49:52.672Z 主力工具状态 codex：本期无重要更新 claude-code：本期无重要更新 五分钟概览 本期无重要更新。</description>
+      <content:encoded><![CDATA[<h1>AI 前沿个人简报 2026-09-11</h1>
+<blockquote>
+<p>覆盖时间：2026-09-09T03:54:31.589Z ～ 2026-09-11T03:49:52.672Z</p>
+</blockquote>
+<h2>主力工具状态</h2>
+<ul>
+<li><strong>codex</strong>：本期无重要更新</li>
+<li><strong>claude-code</strong>：本期无重要更新</li>
+</ul>
+<h2>五分钟概览</h2>
+<p>本期无重要更新。</p>
+<hr>
+]]></content:encoded>
+    </item>
     <item>
       <title>AI 前沿个人简报 2026-09-09</title>
       <link>https://1535385491.github.io/Opportunity-Radar/#2026-09-09/ai-personal</link>
@@ -7947,86 +7967,6 @@ RAG与代理工作流一体化平台的领先者，今日在复杂文档处理�
 <li><strong><a href="https://www.anthropic.com/research/discovering-cryptographic-weaknesses">Anthropic的加密研究论文</a></strong>：这不仅是AI能力的展示，更涉及AI如何改变基础安全研究的范式。理解其方法论和影响，对研究者和安全工程师都至关重要。</li>
 <li><strong><a href="https://arxiv.org/abs/2607.17427">“Uncensored”开源模型更乐观的研究</a></strong>：论文揭示了微调数据对模型“世界观”的深刻、非预期的影响。这对于理解AI对齐、安全以及构建特定性格的AI系统具有启示意义。</li>
 <li><strong><a href="https://jfrog.com/blog/jfrog-and-openai-collaboration-on-zero-day-security-findings/">JFrog与OpenAI关于零日漏洞的合作分析</a></strong>：这篇博文具体阐述了AI生成代码的漏洞分析实践，是理解当前AI代码安全前沿现状与挑战的宝贵一手材料。</li>
-</ol>
-]]></content:encoded>
-    </item>
-    <item>
-      <title>ArXiv AI 研究日报 2026-07-29</title>
-      <link>https://1535385491.github.io/Opportunity-Radar/#2026-07-29/ai-arxiv</link>
-      <guid isPermaLink="true">https://1535385491.github.io/Opportunity-Radar/#2026-07-29/ai-arxiv</guid>
-      <pubDate>Wed, 29 Jul 2026 00:00:00 +0000</pubDate>
-      <description>ArXiv AI 研究日报 2026-07-29 数据来源: ArXiv (cs.AI, cs.CL, cs.LG) | 共 50 篇论文 | 生成时间: 2026-07-29 02:55 UTC ArXiv AI 研究日报 日期：2026年7月29日（来源：arXiv.org cs.AI/cs.CL/cs.LG 等） 📌 今日速览 今日研究显著聚焦于 LLM 的效率与智能体安全：在模型侧，通过动态路由（MoE-LoRA）、记忆管理（UniMem/MemLens）与硬件协同设计（MDTransformer）提升推理效率与实用性；在智能体侧，跨供应商信任管理、GUI 任务评估及多模态诊断推理等研究，凸显了从“能用”到“可靠、安全、可解释”的工程化需求；此外，多模态大模型与机器人策略学习（πR²、SAM3D-VLA）在实时交互与跨模态融合上取得新进展。 🔥 重点论文（按主题分类） 🧠 大语言模型（架构、训练、对齐、评估） Pass the Baton: Trajectory-Relayed On-Policy DistillationXu et al.提出“轨迹接力”蒸馏框架，解决 ...</description>
-      <content:encoded><![CDATA[<h1>ArXiv AI 研究日报 2026-07-29</h1>
-<blockquote>
-<p>数据来源: <a href="https://arxiv.org/">ArXiv</a> (cs.AI, cs.CL, cs.LG) | 共 50 篇论文 | 生成时间: 2026-07-29 02:55 UTC</p>
-</blockquote>
-<hr>
-<h2>ArXiv AI 研究日报</h2>
-<p><strong>日期</strong>：2026年7月29日（来源：arXiv.org cs.AI/cs.CL/cs.LG 等）</p>
-<hr>
-<h3>📌 今日速览</h3>
-<p>今日研究显著聚焦于 <strong>LLM 的效率与智能体安全</strong>：在模型侧，通过动态路由（MoE-LoRA）、记忆管理（UniMem/MemLens）与硬件协同设计（MDTransformer）提升推理效率与实用性；在智能体侧，跨供应商信任管理、GUI 任务评估及多模态诊断推理等研究，凸显了从“能用”到“可靠、安全、可解释”的工程化需求；此外，多模态大模型与机器人策略学习（πR²、SAM3D-VLA）在实时交互与跨模态融合上取得新进展。</p>
-<hr>
-<h3>🔥 重点论文（按主题分类）</h3>
-<h4>🧠 大语言模型（架构、训练、对齐、评估）</h4>
-<ol>
-<li><p><strong><a href="http://arxiv.org/abs/2607.26057v1">Pass the Baton: Trajectory-Relayed On-Policy Distillation</a></strong><br><em>Xu et al.</em><br>提出“轨迹接力”蒸馏框架，解决 on-policy 蒸馏中因学生模型早期错误导致后续生成偏离的“前缀失败”问题，提升知识迁移稳定性。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.26052v1">Spend Experts Where You Are Unsure: Confidence-Adaptive Routing for MoE LoRA</a></strong><br><em>Saliencro et al.</em><br>根据 token 置信度动态分配专家资源，避免在简单 token 上过度计算，提升 MoE-LoRA 在效率与性能间的平衡。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.25907v1">Minimizing Targeted Activations: Input-Only Suppression of Evaluation-Awareness Latents</a></strong><br><em>Mody et al.</em><br>通过输入端提示优化，抑制 LLM 内部特定“评估感知”神经元激活，为模型行为控制提供无需推理时干预的新思路。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.25880v1">Stemma: Induced Decision Regions Reveal LLM Provenance</a></strong><br><em>Zhang et al.</em><br>通过诱导决策区域检测 LLM 血缘关系，为模型溯源、版权验证与适配监控提供新方法。</p>
-</li>
-</ol>
-<h4>🤖 智能体与推理（规划、工具使用、安全）</h4>
-<ol start="5">
-<li><p><strong><a href="http://arxiv.org/abs/2607.26041v1">Desktop-Delta Bench: Do Computer-Use Models Understand GUI Transitions?</a></strong><br><em>Pillai et al.</em><br>提出新基准，评估计算机操作智能体对 GUI 状态转移的因果理解能力，填补了现有评估只关注终态结果的空白。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.25914v1">Toward Standardized Cross-Vendor Agent Tool Trust Management</a></strong><br><em>Sharma et al.</em><br>针对自治网络提出跨供应商工具信任管理框架，解决多厂商环境中 AI 智能体的安全调用问题。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.25904v1">Interactive Reward Agent: GUI Task Evaluation via Environment-State Verification</a></strong><br><em>Shi et al.</em><br>通过环境状态验证自动评估 GUI 任务完成情况，为智能体训练提供更可靠、精细的奖励信号。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.25891v1">Messier: A High-Resolution Corpus for Cross-Benchmark Agent Evaluation</a></strong><br><em>Krsteski et al.</em><br>发布统一高分辨率评测语料库，解决当前智能体评估任务碎片化、不可比的问题。</p>
-</li>
-</ol>
-<h4>🔧 方法与框架（效率、多模态、硬件）</h4>
-<ol start="9">
-<li><p><strong><a href="http://arxiv.org/abs/2607.26055v1">$π\mathbf{R}^2$: Reactive Real-time Flow Policies</a></strong><br><em>Park &amp; Tulsiani</em><br>提出反应式实时流策略，使动作分块执行的机器人操作策略能实时响应执行中的新感知输入，提升闭环控制能力。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.26023v1">CHARM: Hierarchical Context Modeling for Multimodal Graph Foundation Models</a></strong><br><em>Yang et al.</em><br>提出多模态图基础模型，通过分层上下文建模实现跨图域、跨模态的零样本迁移。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.25948v1">MODUS: Decoder-Only Any-to-Any Modeling of Diverse Modalities</a></strong><br><em>Ye et al.</em><br>提出统一解码器架构实现任意模态输入到任意模态输出的生成，探索多模态统一建模的高效路径。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.26016v1">MDTransformer: Hardware-Software Co-Design of Photonic Transformer Accelerator</a></strong><br><em>Serunjogi et al.</em><br>通过模分复用与硬件协同设计，提升光子 Transformer 加速器的效率与成本效益。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.25915v1">Penelope: Localized Latent Recurrence for Efficient Structured Reasoning</a></strong><br><em>Chen et al.</em><br>在潜在空间引入局部循环机制，为结构化推理提供更高效、可控的计算扩展方式。</p>
-</li>
-</ol>
-<h4>📊 应用（医疗、机器人、代码）</h4>
-<ol start="14">
-<li><p><strong><a href="http://arxiv.org/abs/2607.25933v1">Evaluating Multi-Turn Multimodal Diagnostic Reasoning on Real-World Clinical Cases</a></strong><br><em>Yang et al.</em><br>构建基于真实病例的多轮多模态诊断推理评估体系，更贴近临床实践的动态推理过程。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.25970v1">Reinforcement Learning for Code Optimization</a></strong><br><em>Chambon et al.</em><br>探索将强化学习用于代码运行时优化，揭示以执行时间作为奖励信号时产生的复杂优化陷阱。</p>
-</li>
-</ol>
-<hr>
-<h3>📈 研究趋势信号</h3>
-<ol>
-<li><strong>LLM 记忆与状态管理</strong>：UniMem、MemLens 等研究关注如何让智能体在长序列任务中有效积累、管理与检索记忆，平衡稳定性与可塑性。  </li>
-<li><strong>推理效率与专用化</strong>：从动态专家分配（MoE-LoRA）到潜在空间循环（Penelope），再到硬件加速（MDTransformer），提升推理效率和部署友好性成为核心目标。  </li>
-<li><strong>智能体安全与治理</strong>：跨厂商信任管理、工具调用验证、评估感知抑制等方向，反映出社区对智能体实际部署中安全、可靠与可控性的高度重视。  </li>
-<li><strong>多模态统一与交互</strong>：从多模态图学习（CHARM）到任意模态生成（MODUS），再到机器人策略（πR²、SAM3D-VLA），研究正朝更灵活、更通用的跨模态感知与行动能力迈进。</li>
-</ol>
-<hr>
-<h3>📖 值得精读</h3>
-<ol>
-<li><p><strong><a href="http://arxiv.org/abs/2607.26057v1">Pass the Baton</a></strong><br><em>理由</em>：针对知识蒸馏中一个关键而棘手的“错误累积”问题提出了新颖的解决方案，方法直观且可能广泛适用于序列生成模型的训练。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.25914v1">Toward Standardized Cross-Vendor Agent Tool Trust Management</a></strong><br><em>理由</em>：直面多智能体系统在复杂工业环境中落地的核心安全挑战，提出的框架具有前瞻性和现实意义，对推动自治网络实用化至关重要。</p>
-</li>
-<li><p><strong><a href="http://arxiv.org/abs/2607.25904v1">Interactive Reward Agent</a></strong><br><em>理由</em>：为 GUI 智能体评估提供了基于环境状态验证的新范式，其方法可生成更可靠、细粒度的奖励，对智能体训练与测试均有启发。</p>
-</li>
 </ol>
 ]]></content:encoded>
     </item>
