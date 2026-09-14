@@ -1,0 +1,30 @@
+{
+  "summary": "CoPaw v2.2.1：按 Agent 独立模型路由与主动记忆审查：CoPaw v2.2.1 发布，支持为每个 Agent 单独配置模型路由（provider 偏好与 fallback），并加入 Auto Fin 主动记忆审查、升级 ReMe 记忆组件。",
+  "signals": [
+    {
+      "title": "CoPaw v2.2.1：按 Agent 独立模型路由与主动记忆审查",
+      "description": "查看 release notes 与相关 PR（#7501），评估其路由配置是否兼容 mimo 后端；如需可按 Agent 级路由做一次小规模验证。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "PipesHub：企业知识接入 AI 的开源平台",
+      "description": "浏览其仓库结构与架构文档，重点看 permission-aware 检索与 citation 生成方式，判断是否能复用到你的知识库或信息收集工具中。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Helicone：开源 LLM 可观测性与评测平台",
+      "description": "查看其接入方式与自托管选项，评估是否能对接 mimo 后端并用于监控你的代码助手/信息收集 Agent 的调用质量与成本。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "MiniCPM5-2B：可本地部署的小型文本生成模型",
+      "description": "在本地 Windows 环境试跑 MiniCPM5-2B，评估其推理质量是否满足轻量任务需求，再决定是否纳入路由后端池。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "临床事件时间锚定：UID 保留的多模态重建与来源溯源裁决",
+      "description": "阅读论文摘要与框架图，重点看 UID 保留与 source span 链接机制，评估能否迁移到你的故障案例时序重建场景。",
+      "report": "ai-personal"
+    }
+  ]
+}

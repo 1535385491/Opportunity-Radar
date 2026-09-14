@@ -1,0 +1,7 @@
+{
+  "ai-personal": [
+    "MiniCPM5-2B：可本地部署的小型文本生成模型：openbmb 发布 MiniCPM5-2B，2B 级 llama 架构文本生成模型，Hugging Face 上 Likes 1351、Downloads 150110。",
+    "临床事件时间锚定：UID 保留的多模态重建与来源溯源裁决：一篇论文提出 UID 保留框架，将叙事事件的发生链接到来源 span，重建临床时间线，支持治疗窗分析与无泄漏建模，并强调 source-grounded 裁决。",
+    "MedRoundsQA：面向多轮医疗咨询的评测基准：MedRoundsQA 是一个 persona 与难度感知的多轮医疗咨询诊断评测基准，从 1,387 个真实病例派生，弥补单轮选择题基准的不足。"
+  ]
+}

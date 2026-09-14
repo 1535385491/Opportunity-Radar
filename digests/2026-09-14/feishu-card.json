@@ -1,0 +1,36 @@
+{
+  "header": {
+    "title": {
+      "tag": "plain_text",
+      "content": "📡 agents-radar · 2026-09-14"
+    },
+    "template": "blue"
+  },
+  "elements": [
+    {
+      "tag": "markdown",
+      "content": "**📋 五分钟概览**\n\n1. **MiniCPM5-2B：可本地部署的小型文本生成模型**\n   openbmb 发布 MiniCPM5-2B，2B 级 llama 架构文本生成模型，Hugging Face 上 Likes 1351、Downloads 150110。 → 可作为模型路由中低成本/本地后端的候选，契合你的第三方后端与本地/离线 AI 关注方向。\n2. **临床事件时间锚定：UID 保留的多模态重建与来源溯源裁决**\n   一篇论文提出 UID 保留框架，将叙事事件的发生链接到来源 span，重建临床时间线，支持治疗窗分析与无泄漏建模，并强调 source-grounded 裁决。 → 直接命中你的时序数据、智能诊断、多模态知识摄取与可解释性方向。\n3. **MedRoundsQA：面向多轮医疗咨询的评测基准**\n   MedRoundsQA 是一个 persona 与难度感知的多轮医疗咨询诊断评测基准，从 1,387 个真实病例派生，弥补单轮选择题基准的不足。 → 命中你的记忆系统与 Agent 评测方法、智能诊断方向。"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**🔧 主力工具状态**\n\n• **codex**：本期无重要更新\n• **claude-code**：本期无重要更新"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "**📎 查看完整报告**\n\n• [AI 前沿个人简报](https://1535385491.github.io/Opportunity-Radar/#2026-09-14/ai-personal)"
+    },
+    {
+      "tag": "hr"
+    },
+    {
+      "tag": "markdown",
+      "content": "[🌐 Web UI](https://1535385491.github.io/Opportunity-Radar)  ·  [⊕ RSS](https://1535385491.github.io/Opportunity-Radar/feed.xml)"
+    }
+  ]
+}
