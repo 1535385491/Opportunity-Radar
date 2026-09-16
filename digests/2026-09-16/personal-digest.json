@@ -1,0 +1,314 @@
+{
+  "toolStatus": {
+    "codex": "本期无重要更新",
+    "claude-code": "v2.1.271~v2.1.273 三连发：网关提示请求头（工具耗时/上下文压缩元数据）、Remote 会话快速模式、以及 272 的可靠性修复，主线围绕可观测性与工作流效率"
+  },
+  "events": [
+    {
+      "id": "evt-1",
+      "filterEventId": "filter-event-1",
+      "title": "Claude Code v2.1.273 新增网关提示请求头，暴露工具耗时与上下文压缩元数据",
+      "topic": "Claude Code 客户端能力与可观测性",
+      "eventTime": "2026-09-15T20:23:03Z",
+      "updateKind": "new",
+      "status": "已确认",
+      "quick": {
+        "what": "Claude Code v2.1.273 为 LLM 网关新增 x-claude-code-request-class、x-claude-code-agent-type、x-claude-code-prev-tool-durations、x-claude-code-compaction、x-claude-code-context-compacted 等请求头，需设置 CLAUDE_CODE_GATEWAY_HINT_HEADERS=1 开启。",
+        "why": "你使用 Claude Code 客户端 + mimo 第三方模型后端，这些请求头恰好作用在客户端与网关之间的链路上，属于你高优先级关注的 Agent 可观测性、上下文压缩管理与模型路由交叉点。",
+        "impact": "网关侧首次可以拿到请求分类、Agent 类型、上一轮工具耗时和上下文是否被压缩的结构化元数据，为路由策略、超时判定、上下文压缩行为观测提供依据；默认关闭，不影响现有调用。",
+        "action": "在测试网关环境开启 CLAUDE_CODE_GATEWAY_HINT_HEADERS=1，抓一次真实会话的请求头，确认 mimo 后端链路是否完整透传、有无被中间层剥离。"
+      },
+      "full": {
+        "background": "Claude Code 作为 CLI 客户端，此前与后端网关之间只传递标准的模型调用参数，网关侧无法区分请求来自哪类 Agent 行为、也无法感知客户端内部的工具调用耗时与上下文压缩决策。对于自建网关或第三方模型后端（如 mimo）的接入方，这意味着路由、限流、超时和成本核算都缺少客户端侧信号。v2.1.273 引入一组可选请求头来补齐这个缺口。",
+        "evidence": "官方 release v2.1.273（2026-09-15T20:23:03Z，GitHub anthropics/claude-code）明确列出新增 x-claude-code-request-class、x-claude-code-agent-type、x-claude-code-prev-tool-durations、x-claude-code-compaction、x-claude-code-context-compacted 请求头，并说明通过 CLAUDE_CODE_GATEWAY_HINT_HEADERS=1 选择开启。同一版本还新增了一条通知（原文被截断，但归类为客户端行为变更）。",
+        "analysis": "这组请求头的设计意图是把客户端侧的运行时上下文'外化'给网关：request-class 与 agent-type 用于请求分类与路由，prev-tool-durations 暴露上一轮工具调用耗时（可用于超时预算和慢工具识别），compaction / context-compacted 则直接暴露上下文压缩是否发生、是否已压缩。三者组合起来，实际上是让网关成为一个可观测点——不需要侵入客户端代码，就能在代理层记录 Agent 行为轨迹。对于 mimo 这类第三方后端，关键问题是这些自定义头是否会被透传；若网关是自建的，可以直接读取并在日志中落地；若经过第三方托管层，需要验证头是否被保留。此外，默认关闭（opt-in）说明 Anthropic 对这些元数据的暴露保持谨慎，也意味着开启后请求体略增、且可能暴露内部启发式信息。",
+        "impact": "对个人项目开发而言，直接收益是可以用网关日志替代部分客户端埋点，低成本获得'这一轮为什么慢''上下文是否被压缩''请求属于哪类 Agent 行为'的答案，正好对应用户关注的 Agent 可观测性、Context Engineering 与模型路由三个方向。对智能诊断类项目，prev-tool-durations 可以作为'哪一步诊断工具拖慢了链路'的一手数据来源。风险在于：开启后客户端内部启发式（压缩策略、请求分类）会以明文头形式经过网络，若网关由不可信第三方托管，需评估信息暴露面。",
+        "action": "1）在非生产环境设置 CLAUDE_CODE_GATEWAY_HINT_HEADERS=1，跑一次包含多轮工具调用的会话；2）在网关侧打印全部 x-claude-code-* 头，核对五个头是否齐全、值格式如何；3）验证 mimo 后端链路对这些自定义头的透传与保留行为；4）若透传正常，把 prev-tool-durations 与 compaction 字段接入本地日志/报表，作为 Agent 工作流可观测性的第一批信号。",
+        "limitations": "功能默认关闭且为 v2.1.273 新增，官方未提供字段的稳定性承诺，头名称与语义可能随版本变化；中间网关（尤其是第三方托管服务）可能剥离未知头；原文中新增通知的具体内容被截断，未纳入本分析。"
+      },
+      "candidateIds": [
+        "https://github.com/anthropics/claude-code/releases/tag/v2.1.273"
+      ],
+      "sources": [
+        {
+          "name": "GitHub",
+          "url": "https://github.com/anthropics/claude-code/releases/tag/v2.1.273"
+        }
+      ]
+    },
+    {
+      "id": "evt-2",
+      "filterEventId": "filter-event-2",
+      "title": "Claude Code v2.1.271 增加 Remote 会话快速模式与全屏配置鼠标支持",
+      "topic": "Claude Code 客户端能力",
+      "eventTime": "2026-09-14T22:12:54Z",
+      "updateKind": "new",
+      "status": "已确认",
+      "quick": {
+        "what": "Claude Code v2.1.271 为 Remote 会话（云端与自托管 runner）加入快速模式，由 host 端设置或会话中输入的 /fast 生效（受组织策略限制）；同时全屏模式下 /config 面板支持鼠标滚轮滚动。",
+        "why": "属于你主力工具的工作流与交互效率变化，快速模式会影响会话响应行为与运行成本，是需要知情的客户端行为变更。",
+        "impact": "如果你使用 Remote 会话，快速模式会改变 host 侧默认行为；全屏 /config 的鼠标支持是小幅效率改进，影响有限。",
+        "action": "确认自己是否使用 Remote 会话；若使用，检查 host 端 fast-mode 设置与 /fast 行为是否符合预期，避免组织策略与本地预期不一致。"
+      },
+      "full": {
+        "background": "Claude Code Remote 会话允许在云端或自托管 runner 上运行 Agent 任务，其执行环境与本地会话不同，配置来源也更复杂（host 设置 + 组织策略 + 会话内命令）。此前快速模式（fast mode）的可用性与作用范围在 Remote 场景下并不明确。v2.1.271 明确了这一行为，并顺带改善了全屏模式下配置面板的交互方式。",
+        "evidence": "官方 release v2.1.271（2026-09-14T22:12:54Z，GitHub anthropics/claude-code）说明两点：一是 Claude Code Remote 会话（云端和自托管 runner）新增快速模式，host 的 fast-mode 设置或在会话中输入的 /fast 会在组织允许的范围内生效；二是全屏模式下 /config 面板新增鼠标支持，滚轮可滚动设置项。",
+        "analysis": "快速模式的语义是'用响应速度换质量/成本'的取舍，把它扩展到 Remote 会话意味着 host 侧策略成为决定因素——同一个 /fast 命令在不同 host、不同组织策略下行为可能不一致。这对个人开发者的实际含义是：Remote 会话的行为不再完全可控于本地配置，排查'为什么这次会话质量不一样'时需要把 host 侧设置纳入考虑。鼠标支持属于纯交互改进，对自动化工作流无实质影响，但对频繁在 Windows 终端全屏模式下调整配置的用户是轻微效率提升。整体上这是工作流层面的中等价值变更，不改变能力边界。",
+        "impact": "对个人项目开发：若不用 Remote 会话则几无影响；若使用，需重新确认 fast-mode 的生效链路（本地 /fast 与 host 设置谁优先、组织策略如何限制）。对自动化信息收集与诊断类项目：Remote runner 上的行为差异可能导致同一任务在不同 host 产出不同结果，需要在流水线中固定 host 侧配置。",
+        "action": "无需立即行动。若使用 Remote 会话，建议记录当前 host 的 fast-mode 配置与会话内 /fast 的实际生效情况，作为后续排查行为差异的基线。",
+        "limitations": "官方描述未给出 fast-mode 在质量/成本上的量化差异，也未说明 /fast 与 host 设置的优先级细节；本条 confidence 为 medium，具体行为仍需实测确认。"
+      },
+      "candidateIds": [
+        "https://github.com/anthropics/claude-code/releases/tag/v2.1.271"
+      ],
+      "sources": [
+        {
+          "name": "GitHub",
+          "url": "https://github.com/anthropics/claude-code/releases/tag/v2.1.271"
+        }
+      ]
+    },
+    {
+      "id": "evt-3",
+      "filterEventId": "filter-event-3",
+      "title": "PaddleOCR：将 PDF/图片文档转为面向 LLM 的结构化数据",
+      "topic": "多模态知识摄取 / 文档解析",
+      "eventTime": "2026-09-16T03:31:50Z",
+      "updateKind": "new",
+      "status": "已确认",
+      "quick": {
+        "what": "PaddleOCR（PaddlePaddle 出品）是一个轻量 OCR 工具包，把 PDF/图片文档转成面向 LLM 的结构化数据，支持 100+ 语言，覆盖 PDF-to-Markdown、KIE、文档解析等能力。",
+        "why": "直接对应你关注的多模态知识摄取方向，是构建 RAG/知识库时把 PDF、表格、图片转成可检索结构化数据的可落地组件。",
+        "impact": "为个人知识库与诊断案例库提供了一条从原始文档到 LLM 可用结构化数据的现成路径，减少自研解析管线的成本。",
+        "action": "先用一批真实诊断文档（PDF/扫描件/表格）做小规模试跑，重点评估表格还原与 Markdown 结构质量，再决定是否接入摄取流水线。"
+      },
+      "full": {
+        "background": "构建 RAG 或项目知识库时，最大的工程量往往不在检索或生成，而在把异构文档（PDF、扫描件、含表格与图片的报告）转成结构良好、可切分、可检索的文本。通用文本抽取对版面复杂的 PDF 效果差，而多模态大模型直接读 PDF 成本高、不可复现。PaddleOCR 定位就是填补这段'图像/PDF 到 LLM'的转换缺口。",
+        "evidence": "GitHub 首次发现（查询词 rag，Python，官方仓库 PaddlePaddle/PaddleOCR）。仓库描述为把任意 PDF 或图片文档转成面向 AI 的结构化数据，是连接图像/PDF 与 LLM 的轻量 OCR 工具包，支持 100+ 语言。Topics 包含 ocr、document-parsing、pdf-extractor-rag、pdf-parser、pdf2markdown、pp-structure、kie、paddleocr-vl、rag 等，表明项目覆盖 OCR、版面分析、关键信息抽取和 PDF 转 Markdown 等具体能力。",
+        "analysis": "该项目的价值在于它同时覆盖了几个用户关心的摄取环节：pdf2markdown 解决版面到 Markdown 的结构保持，pp-structure 处理文档版面分析，kie 处理关键信息抽取，paddleocr-vl 则暗示存在视觉语言模型路径。对智能诊断和故障案例推理场景而言，故障报告、维修记录、设备手册通常以 PDF/扫描件形式存在且含大量表格与参数，这类结构化摄取的质量直接决定后续检索与推理的上限。需要注意 PaddleOCR 依赖 PaddlePaddle 生态，在 Windows 上的安装与 GPU 依赖配置通常比纯 Python 库更繁琐，这是落地的实际摩擦点。",
+        "impact": "为用户在文档/表格/图片等多模态知识摄取方向上提供了一个成熟度高、语言覆盖广的候选组件，可显著降低自建解析管线的起步成本。若项目已有 RAG 流水线，可作为'摄取层'的替换或补充；若尚未搭建，可作为摄取层的默认起点。表格与复杂版面的还原质量是关键变量，决定后续 chunk 策略与检索效果。",
+        "action": "1）在 Windows 上按官方指引安装 PaddlePaddle + PaddleOCR，确认 CPU 版本可跑通；2）抽取 5~10 份真实诊断/故障文档，对比 pdf2markdown 输出与原文结构（重点看表格、多栏、图注）；3）把输出接入现有 chunk + 检索流程做端到端小规模评测；4）若表格还原不达标，评估是否需切换到 paddleocr-vl 路径或补充后处理。",
+        "limitations": "首次发现项目，不代表本期有新发布；仓库活跃度与维护状态未评估（也不在本报告范围内）；PaddlePaddle 生态在 Windows 上的依赖与 GPU 配置复杂度需实际验证；未验证其在中文扫描件与复杂表格上的实际精度。"
+      },
+      "candidateIds": [
+        "https://github.com/PaddlePaddle/PaddleOCR"
+      ],
+      "sources": [
+        {
+          "name": "GitHub Search (rag)",
+          "url": "https://github.com/PaddlePaddle/PaddleOCR"
+        }
+      ],
+      "projectContext": "PaddleOCR 是百度 PaddlePaddle 生态下的开源 OCR 工具包，长期维护，提供文本检测、识别、版面分析、表格识别与关键信息抽取等能力，是中文 OCR 领域使用最广的开源方案之一。本报告把它作为'多模态知识摄取'方向的首次项目发现纳入，用于评估其作为 RAG 摄取层的适用性。",
+      "isProjectDiscovery": true
+    },
+    {
+      "id": "evt-4",
+      "filterEventId": "filter-event-4",
+      "title": "NirDiamant/RAG_Techniques：高级 RAG 技术笔记本合集",
+      "topic": "RAG 工程实践",
+      "eventTime": "2026-09-15T12:51:09Z",
+      "updateKind": "new",
+      "status": "已确认",
+      "quick": {
+        "what": "NirDiamant/RAG_Techniques 是一个高级 RAG 技术合集仓库，每项技术配有可运行的 Jupyter notebook 教程，覆盖 agentic-rag、embeddings、语义检索、向量库等。",
+        "why": "可为你 RAG/知识库项目提供实现参考与评测对照，尤其适合快速验证不同检索策略在自有数据上的差异。",
+        "impact": "降低尝试 agentic-rag、混合检索、重排等技术的启动成本，把'读论文'变成'跑 notebook'。",
+        "action": "挑选与当前知识库最相关的 2~3 个 notebook（如 agentic-rag、重排），替换为自己的语料跑一遍，作为方案选型的对照基线。"
+      },
+      "full": {
+        "background": "RAG 领域技术迭代快，从朴素向量检索到混合检索、重排、查询改写、agentic-rag 等，概念多但落地参考分散。开发者常见困境是知道名词、不清楚各技术的实现细节与适用边界。NirDiamant/RAG_Techniques 以'每项技术一个可运行 notebook'的形式把实现细节摊开，属于学习与选型阶段的实用资料。",
+        "evidence": "GitHub 首次发现（查询词 vector-db，Jupyter Notebook）。仓库描述为展示 RAG 系统的各类高级技术，每项技术都有详细 notebook 教程。Topics 包含 agentic-rag、embeddings、semantic-search、vector-database、langchain、llama-index、rag、retrieval-augmented-generation、tutorials 等，表明内容以教学/示例为主并覆盖主流框架。",
+        "analysis": "该仓库的定位是'技术目录 + 可执行示例'，价值不在生产级实现，而在让开发者用最低成本对比不同策略。对用户而言，最相关的可能是 agentic-rag（与 Agent 工作流结合）以及检索策略类（重排、混合检索），因为这些直接决定知识库检索质量。需要注意的是 notebook 教程通常使用公开数据集和简化配置，迁移到个人项目的真实语料时，切分策略、embedding 模型选择、评测方法都需要重做，不能直接照搬效果结论。此外仓库内容以英文与 LangChain/LlamaIndex 生态为主，若用户后端是 mimo，需要自行适配调用层。",
+        "impact": "为 RAG 方向的方案选型提供了一个低成本试验场，可作为'评测对照'的参照实现。对个人项目而言，能明显缩短'从想法到可跑通原型'的时间。局限是它不解决数据质量与评测体系问题——而这恰恰是 RAG 效果的真正瓶颈。",
+        "action": "1）浏览仓库目录，挑出与当前知识库痛点匹配的 2~3 个技术（如混合检索、重排、agentic-rag）；2）把 notebook 中的语料替换为自己的诊断/项目文档；3）记录每项技术在自测集上的检索命中与答案质量，形成选型对照表；4）把验证有效的策略沉淀为自己的标准检索流程。",
+        "limitations": "首次发现项目，非本期更新；notebook 教程的结论基于公开数据集，迁移到自有语料时需重新验证；示例多依赖 LangChain/LlamaIndex，与 mimo 后端集成需自行适配；仓库成熟度与维护状态未评估。"
+      },
+      "candidateIds": [
+        "https://github.com/NirDiamant/RAG_Techniques"
+      ],
+      "sources": [
+        {
+          "name": "GitHub Search (vector-db)",
+          "url": "https://github.com/NirDiamant/RAG_Techniques"
+        }
+      ],
+      "projectContext": "NirDiamant/RAG_Techniques 是社区维护的开源教学仓库，以 Jupyter Notebook 形式逐步讲解并实现多种高级 RAG 技术，在 RAG 学习资料中流传较广。本报告将其作为 RAG 工程实践方向的首次项目发现纳入，用于参考实现与评测对照。",
+      "isProjectDiscovery": true
+    },
+    {
+      "id": "evt-5",
+      "filterEventId": "filter-event-5",
+      "title": "CoSQ：让 LLM 在信息不足时选择弃答的选择性风险控制",
+      "topic": "Agent 评测与可靠性 / 不确定性",
+      "eventTime": "2026-09-15T17:52:24Z",
+      "updateKind": "new",
+      "status": "已确认",
+      "quick": {
+        "what": "论文提出 Chain-of-Self-Questioning (CoSQ)，一个纯提示框架，让模型在明确评估'回答问题所需信息'之后才决定是否给出答案，从而实现选择性风险控制（信息不足时弃答）。",
+        "why": "与你关注的 Agent 评测方法、可解释性与可靠性直接相关；对智能诊断、故障案例推理这类答错代价高的场景，弃答机制有实际工程价值。",
+        "impact": "提供了一种不需要训练、仅靠提示即可降低高风险场景错误答案比例的思路，可作为诊断类 Agent 的兜底策略参考。",
+        "action": "阅读论文确认评估设置与弃答阈值定义；若思路可迁移，在诊断问答流程中加一个'信息是否充分'的自评环节并做小规模对照。"
+      },
+      "full": {
+        "background": "LLM 在事实支撑薄弱时仍会给出流畅答案，这在诊断、医疗、运维等高风险场景中代价很高。选择性预测（selective prediction）研究的目标是让系统在不确定时选择弃答，从而把错误率控制在可接受范围内。传统做法多依赖模型输出的置信度或需要额外训练，而纯提示路径的可行性一直是关注点。",
+        "evidence": "ArXiv 论文 2609.17516v1（2026-09-15T17:52:24Z，cs.CL / cs.AI，单作者 Ali Şenol）。摘要指出 LLM 在事实支撑薄弱时会产生流畅答案，论文提出 Chain-of-Self-Questioning (CoSQ)，一个纯提示框架，使'答案承诺'以对回答问题所需信息的显式评估为条件；摘要中评测部分被截断，未给出具体数据集与指标。",
+        "analysis": "CoSQ 的核心机制是把'我需要什么信息才能回答'这一步显式化，作为是否作答的前置门控。这在工程上等价于在生成前插入一个自评节点，其优势是无需训练数据、无需改模型、可提示层实现；代价是增加一次推理开销，且自评本身也可能不可靠（模型可能高估自己掌握的信息）。与用户关注的智能诊断和故障案例推理结合时，这个机制的价值在于：可以为诊断结论附加'信息是否充分'的标签，把'不知道'与'知道但不确定'区分开，提升可解释性。局限是纯提示方法的弃答率与准确率权衡通常不如训练过的方法稳定，且论文评测细节在摘要中缺失。",
+        "impact": "为用户在 Agent 可靠性方向提供了一个可直接试验的轻量机制，尤其适合诊断类问答的兜底层。如果验证有效，可减少高风险场景下的误导性结论，并让 Agent 输出附带置信/信息充分性信号，服务于可解释性要求。",
+        "action": "1）获取全文，确认评测基准、弃答率与准确率的权衡曲线；2）在自己的诊断问答链路上做最小实现：生成前加一步'回答该问题所需信息是否已具备'的自评；3）用一批已知答案的故障案例做对照，观察错误答案是否下降、正确弃答比例如何；4）若要产品化，评估额外的推理延迟是否可接受。",
+        "limitations": "仅有摘要，评测细节、基线对比与量化结果未知；纯提示方法的效果高度依赖模型能力，迁移到 mimo 后端需重新验证；未涉及多轮 Agent 场景下的弃答传播问题。"
+      },
+      "candidateIds": [
+        "http://arxiv.org/abs/2609.17516v1"
+      ],
+      "sources": [
+        {
+          "name": "ArXiv",
+          "url": "http://arxiv.org/abs/2609.17516v1"
+        }
+      ]
+    },
+    {
+      "id": "evt-6",
+      "filterEventId": "filter-event-6",
+      "title": "ENCP：面向视觉-语言导航的片段归一化保形预测不确定性估计",
+      "topic": "不确定性估计 / 可信 Agent",
+      "eventTime": "2026-09-15T17:42:15Z",
+      "updateKind": "new",
+      "status": "已确认",
+      "quick": {
+        "what": "论文提出 ENCP（Episode-Normalized Conformal Prediction），把保形预测框架用于视觉-语言导航（VLN）模型的不确定性估计，以识别模糊与不可靠的预测。",
+        "why": "保形预测是带统计保证的不确定性框架，与你关注的智能诊断可解释性、Agent 可靠性评估方法相关，其置信度校准思路可迁移到故障推理。",
+        "impact": "为给 Agent 输出附加有覆盖率保证的置信区间提供了一种参考方法，适合需要'结论可信度'量化的诊断场景。",
+        "action": "了解保形预测的基本机制；若诊断系统需要输出置信度，可评估把 ENCP 的片段归一化思路应用于自有推理链路的可行性。"
+      },
+      "full": {
+        "background": "保形预测（conformal prediction, CP）是一类提供有限样本覆盖率保证的不确定性估计框架，在高风险决策中越来越受重视。VLN 任务要求智能体根据语言指令在环境中导航，其决策不确定性的量化对安全性至关重要。已有 CP 方法在 VLN 上的适配存在序列决策带来的分布漂移问题，ENCP 针对这一点提出片段（episode）级的归一化处理。",
+        "evidence": "ArXiv 论文 2609.17499v1（2026-09-15T17:42:15Z，cs.LG / cs.AI / cs.RO，三位作者 Vicky Feliren、A. Taufiq Asyhari、Muhamad Risqi U. Saputra）。摘要说明 VLN 的不确定性估计可帮助识别模糊与不可靠预测、使智能体做出更安全的导航决策，保形预测作为最先进的不确定性框架之一被采用；摘要中具体方法与实验结果部分被截断。",
+        "analysis": "ENCP 的关键点在于'e-pisode-normalized'——序列决策任务中不同片段的难度差异大，直接应用 CP 会导致覆盖率在片段间分布不均，归一化是为了让置信区间在跨片段时仍保持有效。这个思路对用户的价值不在 VLN 本身，而在于'序列化 Agent 任务中的置信度校准'这一通用问题：诊断 Agent 的多步推理同样是序列决策，每步难度不同，如果要做置信度输出，需要类似的归一化处理而非全局统一阈值。因此本文可作为方法论参考。但 VLN 与文本诊断的观测空间差异极大，直接迁移不现实，需要抽象出'片段/回合'的定义。",
+        "impact": "为用户在 Agent 可靠性与可解释性方向补充了一个带统计保证的不确定性方法视角。若未来要在诊断系统中输出'结论可信度'，本文提供的片段归一化思路比简单使用模型 logprob 更有理论支撑。短期属于知识储备而非立即可落地的组件。",
+        "action": "无需立即行动。建议在需要为诊断推理链路设计置信度输出时，回顾本文的片段归一化处理方式，并检查是否需要对'诊断回合'做类似的分层校准。",
+        "limitations": "仅有摘要，方法细节、数据集与覆盖率实验结果未知；VLN 与文本诊断任务差异大，迁移需自行抽象；保形预测的覆盖率保证依赖可交换性假设，序列决策下需额外处理。"
+      },
+      "candidateIds": [
+        "http://arxiv.org/abs/2609.17499v1"
+      ],
+      "sources": [
+        {
+          "name": "ArXiv",
+          "url": "http://arxiv.org/abs/2609.17499v1"
+        }
+      ]
+    },
+    {
+      "id": "evt-7",
+      "filterEventId": "filter-event-7",
+      "title": "从瞬态提示到持久控制：科学海报生成的递归语义-几何契约",
+      "topic": "结构化输出与数据契约 / 多阶段生成",
+      "eventTime": "2026-09-15T15:32:07Z",
+      "updateKind": "new",
+      "status": "已确认",
+      "quick": {
+        "what": "论文提出用递归的语义-几何契约替代瞬态提示来生成科学海报：把多模态论文压缩为单页视觉产物时，用持久化契约而非一次性提示来约束各阶段，并逐阶段校验。",
+        "why": "把瞬态提示转为持久契约并逐阶段验证的做法，与你关注的 Context Engineering、结构化输出与数据契约、多阶段工作流可靠性直接相关，可迁移到报告生成流水线。",
+        "impact": "提供了一种在空间/预算受限的多阶段生成任务中保持约束一致性的工程模式，对自动化信息收集与报告生成有直接借鉴意义。",
+        "action": "阅读论文中契约的表示形式与阶段校验机制；在自己的报告生成流水线中试验'把输出约束写成显式契约并逐步校验'的改造。"
+      },
+      "full": {
+        "background": "多阶段生成任务（如从论文生成海报、从多源数据生成报告）常见失败模式是：各阶段在孤立环境下用一次性提示（transient prompt）驱动，阶段之间的约束无法保持一致，最终产物在信息覆盖与可读性之间失衡。该论文针对科学海报生成这一具体任务，提出用持久化的语义-几何契约（semantic-geometric contract）贯穿整个生成流程。",
+        "evidence": "ArXiv 论文 2609.17326v1（2026-09-15T15:32:07Z，cs.AI，八位作者，含 Runze Li、Yukun Zhao、Can Xu）。摘要指出科学海报生成把多模态论文压缩为单页视觉产物，需在固定空间预算下权衡信息覆盖与可读性；现有方法把计划作为瞬态提示传递、对单个阶段孤立验证，本文方法则不同（具体机制在截断处）。",
+        "analysis": "该工作的核心洞见具有跨任务普适性：多阶段生成的可靠性问题，根源在于约束以'瞬态提示'形式存在于上下文中，容易在阶段传递中被稀释或丢失；改为显式、持久化的契约并对每个阶段单独校验，可以保持全局一致性。'语义-几何'的二分也值得借鉴——语义层面约束内容覆盖，几何层面约束空间/格式分配，对应到报告生成就是'内容要点契约'与'版面/篇幅契约'。这与用户关注的 Context Engineering 和结构化输出高度同构：契约本质上就是跨阶段持有的结构化上下文。虽然论文任务是海报（视觉产物），但'持久契约 + 分阶段校验'的模式对文本报告、诊断摘要等任务同样适用。局限在于海报任务的几何约束天然明确，文本报告的空间约束更模糊，迁移时需要重新定义契约维度。",
+        "impact": "为用户在自动化报告生成方向提供了一个可操作的架构模式：用显式契约替代散落在各阶段提示中的隐式约束，并在阶段边界做校验。这对信息收集、筛选、报告生成流水线的稳定性和可预测性有直接价值，也契合 Context Engineering 关注点。",
+        "action": "1）阅读论文，重点看契约的具体表示（schema/结构）与阶段校验的实现方式；2）在现有报告生成流水线中，把散落的格式与内容约束抽成一份显式契约（如章节、每节要点数、篇幅上限）；3）在每阶段结束处加校验步骤，对比改造前后的输出一致性与返工率。",
+        "limitations": "仅有摘要，契约的具体表示、校验机制与量化结果未知；海报任务的几何约束比文本报告更明确，迁移需重新定义契约维度；论文领域为视觉生成，与用户文本/诊断场景存在域差异。"
+      },
+      "candidateIds": [
+        "http://arxiv.org/abs/2609.17326v1"
+      ],
+      "sources": [
+        {
+          "name": "ArXiv",
+          "url": "http://arxiv.org/abs/2609.17326v1"
+        }
+      ]
+    },
+    {
+      "id": "evt-8",
+      "filterEventId": "filter-event-8",
+      "title": "Claude Code v2.1.272 版本更新（Bug 修复与可靠性改进）",
+      "topic": "Claude Code 客户端版本与可靠性",
+      "eventTime": "2026-09-15T00:42:25Z",
+      "updateKind": "updated",
+      "status": "已确认",
+      "quick": {
+        "what": "Claude Code v2.1.272 发布，变更内容为 bug 修复与可靠性改进，官方未列出具体条目。",
+        "why": "属于你主力工具版本序列中的一环，补齐 v2.1.271 与 v2.1.273 之间的版本脉络，便于判断升级路径。",
+        "impact": "无新增能力，但作为可靠性修复版本，通常修复了前序版本中的具体缺陷；具体修复内容未知，影响范围无法评估。",
+        "action": "无需单独行动；若当前版本存在稳定性问题，可考虑升级到 v2.1.273（含 272 的修复与 273 的新请求头功能）。"
+      },
+      "full": {
+        "background": "Claude Code 采用高频小版本发布节奏，其中一部分版本只包含 bug 修复与可靠性改进，不引入新功能。v2.1.272 位于 v2.1.271（Remote 快速模式、/config 鼠标支持）与 v2.1.273（网关提示请求头）之间，属于典型的中间维护版本。",
+        "evidence": "官方 release v2.1.272（2026-09-15T00:42:25Z，GitHub anthropics/claude-code），变更说明仅为 'Bug fixes and reliability improvements'，未列出具体修复项。",
+        "analysis": "该版本本身没有可分析的功能变更，价值在于维持版本序列的完整性：用户查看 v2.1.273 时应知道必须先经过/包含 272 的修复。官方未公开具体修复内容，因此无法判断修复是否涉及影响用户工作流的已知问题。这类无明细的维护版本在实际使用中通常建议随新版本一起升级，除非有明确的版本回退需求。",
+        "impact": "对用户工作流的直接影响可忽略；其意义在于版本脉络的连续性，避免在分析 v2.1.271→v2.1.273 变化时出现断档。若用户当前停留在 v2.1.270 或更早版本，升级到 v2.1.273 会同时获得 271 的 Remote 快速模式、272 的可靠性修复与 273 的网关请求头。",
+        "action": "无需立即行动。若计划使用 v2.1.273 的网关提示请求头，直接升级到该版本即可，无需单独处理 272。",
+        "limitations": "官方未列出具体修复内容，无法评估修复是否与用户当前遇到的问题相关；纯维护版本，无新增能力可供验证。"
+      },
+      "candidateIds": [
+        "https://github.com/anthropics/claude-code/releases/tag/v2.1.272"
+      ],
+      "sources": [
+        {
+          "name": "GitHub",
+          "url": "https://github.com/anthropics/claude-code/releases/tag/v2.1.272"
+        }
+      ]
+    }
+  ],
+  "fiveMinuteBrief": {
+    "topicGroups": [
+      {
+        "name": "Claude Code 客户端：可观测性与工作流",
+        "eventIds": [
+          "evt-1",
+          "evt-2"
+        ]
+      }
+    ]
+  },
+  "fullReport": {
+    "topicGroups": [
+      {
+        "name": "Claude Code 客户端：能力、可靠性与工作流变化",
+        "eventIds": [
+          "evt-1",
+          "evt-2",
+          "evt-8"
+        ]
+      },
+      {
+        "name": "多模态知识摄取与 RAG 工程实践（首次项目发现）",
+        "eventIds": [
+          "evt-3",
+          "evt-4"
+        ]
+      },
+      {
+        "name": "Agent 可靠性与不确定性估计",
+        "eventIds": [
+          "evt-5",
+          "evt-6"
+        ]
+      },
+      {
+        "name": "结构化契约与多阶段生成可靠性",
+        "eventIds": [
+          "evt-7"
+        ]
+      }
+    ]
+  },
+  "generatedAt": "2026-09-16T04:06:01.182Z",
+  "coverageFrom": "2026-09-14T04:09:08.912Z",
+  "coverageTo": "2026-09-16T04:05:00.420Z"
+}

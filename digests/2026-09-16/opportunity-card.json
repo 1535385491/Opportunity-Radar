@@ -1,0 +1,30 @@
+{
+  "summary": "Claude Code v2.1.273 新增网关提示请求头，暴露工具耗时与上下文压缩元数据：Claude Code v2.1.273 为 LLM 网关新增 x-claude-code-request-class、x-claude-code-agent-type、x-claude-code-prev-tool-durations、x-claude-code-compaction、x-claude-code-context-compacted 等请求头，需设置 CLAUDE_CODE_GATEWAY_HINT_HEADERS=1 开启。",
+  "signals": [
+    {
+      "title": "Claude Code v2.1.273 新增网关提示请求头，暴露工具耗时与上下文压缩元数据",
+      "description": "在测试网关环境开启 CLAUDE_CODE_GATEWAY_HINT_HEADERS=1，抓一次真实会话的请求头，确认 mimo 后端链路是否完整透传、有无被中间层剥离。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "Claude Code v2.1.271 增加 Remote 会话快速模式与全屏配置鼠标支持",
+      "description": "确认自己是否使用 Remote 会话；若使用，检查 host 端 fast-mode 设置与 /fast 行为是否符合预期，避免组织策略与本地预期不一致。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "PaddleOCR：将 PDF/图片文档转为面向 LLM 的结构化数据",
+      "description": "先用一批真实诊断文档（PDF/扫描件/表格）做小规模试跑，重点评估表格还原与 Markdown 结构质量，再决定是否接入摄取流水线。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "NirDiamant/RAG_Techniques：高级 RAG 技术笔记本合集",
+      "description": "挑选与当前知识库最相关的 2~3 个 notebook（如 agentic-rag、重排），替换为自己的语料跑一遍，作为方案选型的对照基线。",
+      "report": "ai-personal"
+    },
+    {
+      "title": "CoSQ：让 LLM 在信息不足时选择弃答的选择性风险控制",
+      "description": "阅读论文确认评估设置与弃答阈值定义；若思路可迁移，在诊断问答流程中加一个'信息是否充分'的自评环节并做小规模对照。",
+      "report": "ai-personal"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "ai-personal": [
+    "Claude Code v2.1.273 新增网关提示请求头，暴露工具耗时与上下文压缩元数据：Claude Code v2.1.273 为 LLM 网关新增 x-claude-code-request-class、x-claude-code-agent-type、x-claude-code-prev-tool-durations、x-claude-code-compaction、x-claude-code-context-compacted 等请求头，需设置 CLAUDE_CODE_GATEWAY_HINT_HEADERS=1 开启。",
+    "Claude Code v2.1.271 增加 Remote 会话快速模式与全屏配置鼠标支持：Claude Code v2.1.271 为 Remote 会话（云端与自托管 runner）加入快速模式，由 host 端设置或会话中输入的 /fast 生效（受组织策略限制）；同时全屏模式下 /config 面板支持鼠标滚轮滚动。"
+  ]
+}

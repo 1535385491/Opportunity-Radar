@@ -1,59 +1,74 @@
 {
-  "lastSuccessfulAt": "2026-09-14T04:09:08.912Z",
-  "lastReportDate": "2026-09-14",
+  "lastSuccessfulAt": "2026-09-16T04:05:00.420Z",
+  "lastReportDate": "2026-09-16",
   "snapshotMarkers": {
     "trending": {
       "trendingNames": [
+        "alibaba/open-code-review",
         "JustVugg/colibri",
         "ever-co/ever-gauzy",
-        "bilawalsidhu/gods-eye-view",
-        "tech-leads-club/agent-skills",
-        "melgarafael/DeskcommCRM",
-        "calesthio/OpenMontage",
-        "asgeirtj/system_prompts_leaks",
-        "vxcontrol/pentagi",
-        "multimodal-art-projection/YuE",
-        "yuliskov/SmartTube",
-        "alphaXiv/OpenResearch",
         "debpalash/VoiceStudio",
-        "SnailSploit/Claude-Red",
-        "alibaba/open-code-review",
-        "jihe520/MathModelAgent",
+        "Homebrew/BrewUI",
+        "melgarafael/DeskcommCRM",
+        "alphaXiv/OpenResearch",
+        "NationalSecurityAgency/ghidra",
+        "danny-avila/LibreChat",
+        "pacifio/atlas",
+        "MG1937/ASC",
+        "addyosmani/agent-skills",
         "tonhowtf/omniget",
-        "jiji262/douyin-downloader",
-        "Swordfish90/cool-retro-term",
-        "huggingface/transformers"
+        "earendil-works/pi"
       ],
       "starCounts": {
+        "alibaba/open-code-review": 0,
         "JustVugg/colibri": 0,
         "ever-co/ever-gauzy": 0,
-        "bilawalsidhu/gods-eye-view": 0,
-        "tech-leads-club/agent-skills": 0,
-        "melgarafael/DeskcommCRM": 0,
-        "calesthio/OpenMontage": 0,
-        "asgeirtj/system_prompts_leaks": 0,
-        "vxcontrol/pentagi": 0,
-        "multimodal-art-projection/YuE": 0,
-        "yuliskov/SmartTube": 0,
-        "alphaXiv/OpenResearch": 0,
         "debpalash/VoiceStudio": 0,
-        "SnailSploit/Claude-Red": 0,
-        "alibaba/open-code-review": 0,
-        "jihe520/MathModelAgent": 0,
+        "Homebrew/BrewUI": 0,
+        "melgarafael/DeskcommCRM": 0,
+        "alphaXiv/OpenResearch": 0,
+        "NationalSecurityAgency/ghidra": 0,
+        "danny-avila/LibreChat": 0,
+        "pacifio/atlas": 0,
+        "MG1937/ASC": 0,
+        "addyosmani/agent-skills": 0,
         "tonhowtf/omniget": 0,
-        "jiji262/douyin-downloader": 0,
-        "Swordfish90/cool-retro-term": 0,
-        "huggingface/transformers": 0
+        "earendil-works/pi": 0
       },
       "searchNames": [
+        "Mintplex-Labs/anything-llm",
+        "meilisearch/meilisearch",
+        "run-llama/llama_index",
+        "milvus-io/milvus",
+        "VectifyAI/PageIndex",
+        "qdrant/qdrant",
+        "topoteretes/cognee",
+        "NirDiamant/RAG_Techniques",
+        "weaviate/weaviate",
+        "alibaba/zvec",
+        "langchain4j/langchain4j",
+        "neuml/txtai",
+        "lancedb/lancedb",
+        "oramasearch/orama",
+        "oceanbase/oceanbase",
+        "open-webui/open-webui",
+        "langchain-ai/langchain",
+        "Shubhamsaboo/awesome-llm-apps",
+        "Graphify-Labs/graphify",
+        "thedotmack/claude-mem",
+        "infiniflow/ragflow",
+        "PaddlePaddle/PaddleOCR",
+        "headroomlabs-ai/headroom",
+        "mem0ai/mem0",
+        "jeecgboot/JeecgBoot",
         "bojieli/ai-agent-book",
+        "langchain-ai/langgraph",
+        "666ghj/MiroFish",
         "pingcap/tidb",
         "volcengine/OpenViking",
-        "topoteretes/cognee",
         "supermemoryai/supermemory",
         "dolthub/dolt",
         "NevaMind-AI/memU",
-        "EverMind-AI/EverOS",
         "semantica-agi/semantica",
         "deeplethe/utopia",
         "plastic-labs/honcho",
@@ -61,32 +76,6 @@
         "ai-boost/awesome-harness-engineering",
         "letta-ai/letta-code",
         "neomjs/neo",
-        "open-webui/open-webui",
-        "langchain-ai/langchain",
-        "Shubhamsaboo/awesome-llm-apps",
-        "Graphify-Labs/graphify",
-        "thedotmack/claude-mem",
-        "infiniflow/ragflow",
-        "headroomlabs-ai/headroom",
-        "Mintplex-Labs/anything-llm",
-        "mem0ai/mem0",
-        "run-llama/llama_index",
-        "jeecgboot/JeecgBoot",
-        "milvus-io/milvus",
-        "langchain-ai/langgraph",
-        "HKUDS/LightRAG",
-        "microsoft/graphrag",
-        "tirth8205/code-review-graph",
-        "vesoft-inc/nebula",
-        "adongwanai/AgentGuide",
-        "FalkorDB/FalkorDB",
-        "neo4j-labs/llm-graph-builder",
-        "memgraph/memgraph",
-        "pipeshub-ai/pipeshub-ai",
-        "Zleap-AI/SAG",
-        "raphaelmansuy/edgequake",
-        "onestardao/WFGY",
-        "zzet/gortex",
         "n8n-io/n8n",
         "google-gemini/gemini-cli",
         "koala73/worldmonitor",
@@ -104,14 +93,13 @@
         "modelcontextprotocol/python-sdk",
         "Fission-AI/OpenSpec",
         "shanraisshan/claude-code-best-practice",
-        "VectifyAI/PageIndex",
         "virgiliojr94/book-to-skill",
         "OthmanAdi/planning-with-files",
         "deepset-ai/haystack",
         "Canner/WrenAI",
         "cocoindex-io/cocoindex",
+        "alibaba/spring-ai-alibaba",
         "open-gsd/gsd-core",
-        "trailhq/Graft",
         "langfuse/langfuse",
         "mlflow/mlflow",
         "promptfoo/promptfoo",
@@ -119,7 +107,6 @@
         "confident-ai/deepeval",
         "ifixai-ai/iFixAi",
         "Arize-ai/phoenix",
-        "NVIDIA/garak",
         "jeinlee1991/chinese-llm-benchmark",
         "Tencent/AI-Infra-Guard",
         "Helicone/helicone",
@@ -127,179 +114,184 @@
         "Giskard-AI/giskard-oss",
         "Marker-Inc-Korea/AutoRAG",
         "EvolvingLMMs-Lab/lmms-eval",
-        "meilisearch/meilisearch",
-        "qdrant/qdrant",
-        "weaviate/weaviate",
-        "alibaba/zvec",
-        "langchain4j/langchain4j",
-        "neuml/txtai",
-        "lancedb/lancedb",
-        "oramasearch/orama",
-        "oceanbase/oceanbase",
-        "databendlabs/databend"
+        "hemansnation/AI-Engineer-Headquarters",
+        "HKUDS/LightRAG",
+        "microsoft/graphrag",
+        "tirth8205/code-review-graph",
+        "adongwanai/AgentGuide",
+        "FalkorDB/FalkorDB",
+        "memgraph/memgraph",
+        "pipeshub-ai/pipeshub-ai",
+        "Zleap-AI/SAG",
+        "raphaelmansuy/edgequake",
+        "onestardao/WFGY",
+        "zzet/gortex",
+        "moyangzhan/langchain4j-aideepin",
+        "apecloud/ApeRAG"
       ]
     },
     "hf": {
       "modelIds": [
         "deepseek-ai/DeepSeek-V4.1-Flash",
-        "openbmb/MiniCPM5-2B",
         "Edge0/Edge0-35B-A3B-preview",
+        "openbmb/MiniCPM5-2B",
         "nex-agi/Nex-N2.5-mini",
         "Qwen/Qwen3.8-27B",
+        "m-a-p/YuE2-3B",
         "nex-agi/Nex-N2.5-Pro",
         "ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF",
-        "XHToken/Spark-X2.5-4B",
-        "m-a-p/YuE2-3B",
         "Lightricks/LTX-2.5",
-        "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF",
+        "TokenRhythm/NeoHorse-1-4B",
         "unsloth/Qwen3.8-27B-GGUF",
-        "WarmBloodAban/Minimax-h3_Singularity",
+        "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF",
+        "XHToken/Spark-X2.5-4B",
+        "ukisai/Swift-Qwen3.8-27b",
         "sentence-transformers/all-MiniLM-L6-v2",
-        "google/timesfm-3.0-pytorch",
-        "dealignai/GLM-5.3-CYBERSECURITY-FP8",
-        "MiniMaxAI/MiniMax-H3",
-        "openbmb/MiniCPM5-2B-GGUF",
-        "openai-community/gpt2",
         "tencent/AuK",
-        "google-bert/bert-base-uncased",
+        "WarmBloodAban/Minimax-h3_Singularity",
+        "MiniMaxAI/MiniMax-H3",
+        "openai-community/gpt2",
         "Qwen/Qwen3.8-Flash-Next",
+        "google-bert/bert-base-uncased",
+        "meta-llama/Llama-3.1-8B-Instruct",
+        "dealignai/DeepSeek-V4.1-Flash-UNCENSORED-FP8",
         "facebook/mms-300m",
-        "zai-org/GLM-5.3-Flash",
         "openai/clip-vit-base-patch32",
         "distilbert/distilbert-base-uncased",
-        "TokenRhythm/NeoHorse-1-4B",
         "Agnes-AI/Agnes-3.0-Flash",
-        "meta-llama/Llama-3.1-8B-Instruct",
-        "Alissonerdx/Minimax-H3-ComfyUI"
+        "zai-org/GLM-5.3-Flash",
+        "Alissonerdx/Minimax-H3-ComfyUI",
+        "google/timesfm-3.0-pytorch"
       ],
       "likeCounts": {
-        "deepseek-ai/DeepSeek-V4.1-Flash": 2249,
-        "openbmb/MiniCPM5-2B": 1351,
-        "Edge0/Edge0-35B-A3B-preview": 1146,
-        "nex-agi/Nex-N2.5-mini": 760,
-        "Qwen/Qwen3.8-27B": 15013,
-        "nex-agi/Nex-N2.5-Pro": 625,
-        "ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF": 973,
-        "XHToken/Spark-X2.5-4B": 1155,
-        "m-a-p/YuE2-3B": 422,
-        "Lightricks/LTX-2.5": 3764,
-        "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF": 644,
-        "unsloth/Qwen3.8-27B-GGUF": 4026,
-        "WarmBloodAban/Minimax-h3_Singularity": 379,
-        "sentence-transformers/all-MiniLM-L6-v2": 5941,
-        "google/timesfm-3.0-pytorch": 779,
-        "dealignai/GLM-5.3-CYBERSECURITY-FP8": 434,
-        "MiniMaxAI/MiniMax-H3": 5253,
-        "openbmb/MiniCPM5-2B-GGUF": 221,
-        "openai-community/gpt2": 4052,
-        "tencent/AuK": 196,
-        "google-bert/bert-base-uncased": 3312,
-        "Qwen/Qwen3.8-Flash-Next": 5174,
-        "facebook/mms-300m": 535,
-        "zai-org/GLM-5.3-Flash": 2310,
-        "openai/clip-vit-base-patch32": 1513,
-        "distilbert/distilbert-base-uncased": 1438,
-        "TokenRhythm/NeoHorse-1-4B": 1740,
-        "Agnes-AI/Agnes-3.0-Flash": 140,
-        "meta-llama/Llama-3.1-8B-Instruct": 7278,
-        "Alissonerdx/Minimax-H3-ComfyUI": 145
+        "deepseek-ai/DeepSeek-V4.1-Flash": 2724,
+        "Edge0/Edge0-35B-A3B-preview": 2864,
+        "openbmb/MiniCPM5-2B": 1469,
+        "nex-agi/Nex-N2.5-mini": 811,
+        "Qwen/Qwen3.8-27B": 15288,
+        "m-a-p/YuE2-3B": 576,
+        "nex-agi/Nex-N2.5-Pro": 652,
+        "ISTA-DASLab/Qwen3.8-27B-GSQ-RCO-GGUF": 1147,
+        "Lightricks/LTX-2.5": 4012,
+        "TokenRhythm/NeoHorse-1-4B": 2068,
+        "unsloth/Qwen3.8-27B-GGUF": 4169,
+        "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF": 751,
+        "XHToken/Spark-X2.5-4B": 1212,
+        "ukisai/Swift-Qwen3.8-27b": 273,
+        "sentence-transformers/all-MiniLM-L6-v2": 6004,
+        "tencent/AuK": 259,
+        "WarmBloodAban/Minimax-h3_Singularity": 431,
+        "MiniMaxAI/MiniMax-H3": 5352,
+        "openai-community/gpt2": 4106,
+        "Qwen/Qwen3.8-Flash-Next": 5277,
+        "google-bert/bert-base-uncased": 3351,
+        "meta-llama/Llama-3.1-8B-Instruct": 7638,
+        "dealignai/DeepSeek-V4.1-Flash-UNCENSORED-FP8": 214,
+        "facebook/mms-300m": 550,
+        "openai/clip-vit-base-patch32": 1544,
+        "distilbert/distilbert-base-uncased": 1455,
+        "Agnes-AI/Agnes-3.0-Flash": 186,
+        "zai-org/GLM-5.3-Flash": 2371,
+        "Alissonerdx/Minimax-H3-ComfyUI": 191,
+        "google/timesfm-3.0-pytorch": 816
       }
     }
   },
   "sources": {
     "github-claude-code": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-codex": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-gemini-cli": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-copilot-cli": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-kimi-cli": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-opencode": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-pi": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-qwen-code": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-deepseek-tui": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-openclaw": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-nanobot": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-hermes-agent": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-picoclaw": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-nanoclaw": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-nullclaw": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-ironclaw": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-lobsterai": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-tinyclaw": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z",
+      "lastError": "unknown error"
     },
     "github-moltis": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-copaw": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-zeptoclaw": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "github-zeroclaw": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "web-anthropic": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "web-openai": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "trending": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "hn": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "ph": {
       "lastSuccessfulAt": null,
       "lastError": "unknown error"
     },
     "arxiv": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "hf": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "devto": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     },
     "lobsters": {
-      "lastSuccessfulAt": "2026-09-14T04:09:08.912Z"
+      "lastSuccessfulAt": "2026-09-16T04:05:00.420Z"
     }
   }
 }
